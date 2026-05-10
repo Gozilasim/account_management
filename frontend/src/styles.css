@@ -1,0 +1,482 @@
+/*
+Created at: 2026-05-11 01:17
+Updated at: 2026-05-11 01:17
+Description: Portal frontend visual system and responsive layout styles.
+*/
+
+/* ###############################################
+   Base
+   ############################################### */
+
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f6f8fb;
+  color: #172033;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* ###############################################
+   App Shell
+   ############################################### */
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.sidebar {
+  background: #101827;
+  color: #f8fbff;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.brand {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  font-weight: 750;
+  font-size: 17px;
+}
+
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #38bdf8;
+  color: #06111f;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+nav {
+  display: grid;
+  gap: 8px;
+}
+
+nav button,
+.secondary,
+.primary,
+.link-button {
+  border-radius: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+nav button {
+  text-align: left;
+  background: transparent;
+  color: #c9d4e7;
+}
+
+nav button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  display: grid;
+  gap: 14px;
+}
+
+.mini-user {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.mini-user strong,
+.mini-user span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-user strong {
+  font-size: 14px;
+}
+
+.mini-user span,
+.muted {
+  color: #aab7cd;
+  font-size: 13px;
+}
+
+.main {
+  padding: 40px;
+  display: grid;
+  align-content: start;
+}
+
+/* ###############################################
+   Auth Layout
+   ############################################### */
+
+.auth-layout {
+  min-height: calc(100vh - 80px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 430px;
+  gap: 48px;
+  align-items: center;
+}
+
+.auth-copy h1 {
+  margin: 0;
+  max-width: 680px;
+  font-size: clamp(42px, 6vw, 72px);
+  line-height: 0.96;
+  letter-spacing: 0;
+}
+
+.auth-copy p {
+  max-width: 620px;
+  margin: 24px 0 0;
+  color: #4a5871;
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+.auth-points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.auth-points span,
+.status-row span {
+  border: 1px solid #d7deea;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: #34435a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #dce3ee;
+  border-radius: 8px;
+  padding: 28px;
+  box-shadow: 0 18px 55px rgba(19, 32, 54, 0.08);
+}
+
+.auth-panel {
+  align-self: center;
+}
+
+/* ###############################################
+   Panels And Forms
+   ############################################### */
+
+.panel-header {
+  margin-bottom: 22px;
+}
+
+.panel-header h2,
+.empty-state h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.panel-header p,
+.empty-state p,
+.profile-heading p {
+  margin: 8px 0 0;
+  color: #62708a;
+  line-height: 1.55;
+}
+
+.form-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field span {
+  color: #34435a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.field input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #cdd7e6;
+  border-radius: 8px;
+  padding: 0 13px;
+  background: #ffffff;
+  color: #172033;
+  outline: none;
+}
+
+.field input:focus {
+  border-color: #1788c9;
+  box-shadow: 0 0 0 3px rgba(23, 136, 201, 0.16);
+}
+
+.primary {
+  background: #0f7eb8;
+  color: #ffffff;
+  border-color: #0f7eb8;
+}
+
+.primary:hover:not(:disabled) {
+  background: #0b6c9f;
+}
+
+.secondary {
+  background: #ffffff;
+  color: #172033;
+  border-color: #cdd7e6;
+}
+
+.secondary:hover:not(:disabled) {
+  background: #f4f7fb;
+}
+
+.full {
+  width: 100%;
+}
+
+.link-button {
+  margin-top: 18px;
+  padding: 0;
+  min-height: auto;
+  background: transparent;
+  color: #0f7eb8;
+  border: 0;
+}
+
+.alert {
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.alert-danger {
+  background: #fff1f1;
+  color: #a11919;
+  border: 1px solid #ffcaca;
+}
+
+.alert-success {
+  background: #effaf4;
+  color: #17693b;
+  border: 1px solid #bde9cd;
+}
+
+.alert-info {
+  background: #eef7ff;
+  color: #175f91;
+  border: 1px solid #bedff8;
+}
+
+.qr-wrap {
+  width: 220px;
+  height: 220px;
+  margin: 0 auto 18px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #dce3ee;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.qr-wrap img {
+  width: 190px;
+  height: 190px;
+}
+
+.setup-key {
+  margin-bottom: 18px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f2f5fa;
+  color: #34435a;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  text-align: center;
+  word-break: break-all;
+}
+
+/* ###############################################
+   Account Layout
+   ############################################### */
+
+.content-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 620px);
+  gap: 24px;
+  align-items: start;
+}
+
+.profile-heading {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+
+.profile-heading h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #dbeafe;
+  color: #0f3158;
+}
+
+.profile-heading .avatar {
+  width: 72px;
+  height: 72px;
+}
+
+.avatar-fallback {
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+}
+
+.status-row {
+  margin-top: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.empty-state {
+  max-width: 520px;
+}
+
+/* ###############################################
+   Responsive
+   ############################################### */
+
+@media (max-width: 920px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 16px;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  nav {
+    grid-auto-flow: column;
+  }
+
+  .sidebar-footer {
+    margin-left: auto;
+    margin-top: 0;
+  }
+
+  .mini-user {
+    display: none;
+  }
+
+  .main {
+    padding: 24px;
+  }
+
+  .auth-layout,
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-layout {
+    min-height: auto;
+    gap: 28px;
+  }
+}
+
+@media (max-width: 560px) {
+  .sidebar {
+    align-items: stretch;
+    display: grid;
+    gap: 12px;
+  }
+
+  nav {
+    grid-auto-flow: row;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sidebar-footer {
+    margin-left: 0;
+  }
+
+  .main {
+    padding: 18px;
+  }
+
+  .panel {
+    padding: 20px;
+  }
+
+  .auth-copy h1 {
+    font-size: 40px;
+  }
+}

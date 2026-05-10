@@ -1,0 +1,17 @@
+# Created at: 2026-05-11 01:40
+# Updated at: 2026-05-11 01:40
+# Description: Exclude local dependencies, generated files, and secrets from Docker build context.
+
+.git
+.env
+.env.*
+!.env.example
+backend/.venv
+backend/.pytest_cache
+backend/account_management_backend.egg-info
+backend/**/__pycache__
+frontend/node_modules
+frontend/dist
+frontend/*.tsbuildinfo
+data
+tmp

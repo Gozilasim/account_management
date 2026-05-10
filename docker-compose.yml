@@ -1,0 +1,41 @@
+# Created at: 2026-05-11 01:17
+# Updated at: 2026-05-11 01:40
+# Description: Local backend service with SQLite storage for Portal development.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: account-management-backend
+    environment:
+      PORTAL_PROJECT_ROOT: /app
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/portal.db}
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: ${BACKEND_PORT:-8000}
+      BACKEND_URL: ${BACKEND_URL:-}
+      FRONTEND_HOST: ${FRONTEND_HOST:-127.0.0.1}
+      FRONTEND_PORT: ${FRONTEND_PORT:-5173}
+      FRONTEND_URL: ${FRONTEND_URL:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-portal_session}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-10080}
+      MFA_ISSUER: ${MFA_ISSUER:-My Portal}
+      PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-8}
+      AVATAR_MAX_BYTES: ${AVATAR_MAX_BYTES:-5242880}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      OIDC_PRIVATE_KEY_PEM: ${OIDC_PRIVATE_KEY_PEM:-}
+      OIDC_PRIVATE_KEY_PATH: ${OIDC_PRIVATE_KEY_PATH:-}
+      OIDC_KEY_ID: ${OIDC_KEY_ID:-portal-dev-key}
+    ports:
+      - "${BACKEND_PORT:-8000}:${BACKEND_PORT:-8000}"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${BACKEND_PORT:-8000}/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
