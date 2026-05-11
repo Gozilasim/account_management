@@ -1,6 +1,6 @@
 /*
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-12 01:23
+Updated at: 2026-05-12 02:17
 Description: Frontend API client for GozilaSim ID backend endpoints.
 */
 
@@ -10,6 +10,7 @@ Description: Frontend API client for GozilaSim ID backend endpoints.
 
 import type {
   AuthorizeContext,
+  AvatarHistoryItem,
   ForgotPasswordResponse,
   LoginResponse,
   MfaSetup,
@@ -134,6 +135,11 @@ export const api = {
     formData.set("avatar", file);
     return request<User>("/api/profile/avatar", { method: "POST", formData });
   },
+  listAvatarHistory: () => request<AvatarHistoryItem[]>("/api/profile/avatar/history"),
+  restoreAvatar: (publicId: string) =>
+    request<User>("/api/profile/avatar/restore", { method: "POST", body: { public_id: publicId } }),
+  deleteAvatarHistoryItem: (publicId: string) =>
+    request<{ message: string }>(`/api/profile/avatar/history/${encodeURIComponent(publicId)}`, { method: "DELETE" }),
   listSessions: () => request<SessionInfo[]>("/api/auth/sessions"),
   revokeSession: (sessionId: string) =>
     request<{ message: string }>(`/api/auth/sessions/${sessionId}`, { method: "DELETE" }),

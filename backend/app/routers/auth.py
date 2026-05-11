@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 01:23
+# Updated at: 2026-05-12 02:17
 # Description: Authentication, session, password, and MFA API routes.
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import record_security_event, request_device_label, request_ip_address, request_user_agent
+from app.avatar_history import normalized_avatar_history
 from app.config import settings
 from app.database import get_db
 from app.deps import get_current_session, get_current_user
@@ -79,6 +80,7 @@ def user_out(user: User) -> UserOut:
         locale=user.locale,
         timezone=user.timezone,
         avatar_url=user.avatar_url,
+        avatar_history=normalized_avatar_history(user),
         mfa_enabled=user.mfa_enabled,
         mfa_enrolled=user.mfa_enrolled_at is not None,
         email_verified=user.email_verified,

@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 00:31
+# Updated at: 2026-05-12 02:42
 # Description: Application settings loaded from environment variables.
 
 from __future__ import annotations
@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     oidc_key_id: str = "portal-dev-key"
     oidc_access_token_ttl_minutes: int = 60
     oidc_code_ttl_minutes: int = 5
+    oidc_clients_json: str = ""
 
     @model_validator(mode="after")
     def normalize_sqlite_database_url(self) -> "Settings":

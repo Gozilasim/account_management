@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 00:31
+# Updated at: 2026-05-12 02:17
 # Description: Pydantic request and response schemas for Portal APIs.
 
 from __future__ import annotations
@@ -27,6 +27,13 @@ class ProfileCompletionOut(BaseModel):
     next_prompt_field: str | None
 
 
+class AvatarHistoryItemOut(BaseModel):
+    public_id: str
+    url: str
+    uploaded_at: datetime
+    replaced_at: datetime
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,6 +50,7 @@ class UserOut(BaseModel):
     locale: str | None
     timezone: str | None
     avatar_url: str | None
+    avatar_history: list[AvatarHistoryItemOut]
     mfa_enabled: bool
     mfa_enrolled: bool
     email_verified: bool
@@ -235,6 +243,10 @@ class OnboardingSkipRequest(BaseModel):
         if value not in PROFILE_PROMPT_FIELDS:
             raise ValueError("Field is not part of profile onboarding.")
         return value
+
+
+class AvatarRestoreRequest(BaseModel):
+    public_id: str = Field(min_length=1, max_length=255)
 
 
 # ###############################################

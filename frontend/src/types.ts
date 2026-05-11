@@ -1,6 +1,6 @@
 /*
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-12 01:23
+Updated at: 2026-05-12 02:17
 Description: Shared frontend TypeScript types for GozilaSim ID API responses.
 */
 
@@ -33,10 +33,18 @@ export type User = {
   locale: string | null;
   timezone: string | null;
   avatar_url: string | null;
+  avatar_history: AvatarHistoryItem[];
   mfa_enabled: boolean;
   mfa_enrolled: boolean;
   email_verified: boolean;
   profile_completion: ProfileCompletion;
+};
+
+export type AvatarHistoryItem = {
+  public_id: string;
+  url: string;
+  uploaded_at: string;
+  replaced_at: string;
 };
 
 export type MfaSetup = {

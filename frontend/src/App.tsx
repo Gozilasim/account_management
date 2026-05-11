@@ -1,6 +1,6 @@
 /*
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-12 01:56
+Updated at: 2026-05-12 02:44
 Description: Main GozilaSim ID React UI for authentication, profile, and sign-in protection screens.
 */
 
@@ -10,8 +10,10 @@ Description: Main GozilaSim ID React UI for authentication, profile, and sign-in
 
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "./api";
+import logoMarkSrc from "./assets/gozilasim-logo.png";
 import type {
   AuthorizeContext,
+  AvatarHistoryItem,
   GenderValue,
   LoginResponse,
   MfaSetup,
@@ -98,6 +100,19 @@ function resetToken() {
 function profileEditField(): ProfileEditField {
   const field = new URLSearchParams(window.location.search).get("field");
   return PROFILE_EDIT_FIELDS.includes(field as ProfileEditField) ? field as ProfileEditField : "name";
+}
+
+function profileEditTitle(field: ProfileEditField) {
+  const titleByField: Record<ProfileEditField, string> = {
+    picture: "Profile picture",
+    name: "Name",
+    gender: "Gender",
+    phone: "Phone",
+    birthday: "Birthday",
+    language: "Language",
+    timezone: "Timezone"
+  };
+  return titleByField[field];
 }
 
 function routeForSearch(value: string): ConsoleRoute {
@@ -207,6 +222,48 @@ function latestSecurityEvent(events: SecurityEvent[]) {
 }
 
 // ###############################################
+// Motion Helpers
+// ###############################################
+
+type MotionPresenceState = "closed" | "opening" | "open" | "closing";
+
+const MOTION_FAST_MS = 160;
+const MOTION_BASE_MS = 220;
+
+function useMotionPresence(open: boolean, duration = MOTION_BASE_MS) {
+  const [state, setState] = useState<MotionPresenceState>(() => open ? "open" : "closed");
+
+  useEffect(() => {
+    if (open) {
+      setState("opening");
+      const frame = window.requestAnimationFrame(() => setState("open"));
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    if (state === "closed") return;
+    setState("closing");
+    const timeout = window.setTimeout(() => setState("closed"), duration);
+    return () => window.clearTimeout(timeout);
+  }, [duration, open]);
+
+  return {
+    mounted: state !== "closed",
+    state
+  };
+}
+
+function MotionPanel({ open, children }: { open: boolean; children: ReactNode }) {
+  const presence = useMotionPresence(open);
+  if (!presence.mounted) return null;
+
+  return (
+    <div className="settings-row-panel" data-state={presence.state}>
+      <div className="settings-row-panel-inner">{children}</div>
+    </div>
+  );
+}
+
+// ###############################################
 // Session Hook
 // ###############################################
 
@@ -292,14 +349,7 @@ function Alert({ message, tone = "danger" }: { message: string | null; tone?: "d
 function LogoMark() {
   return (
     <span className="brand-mark" aria-hidden="true">
-      <svg viewBox="0 0 48 48" focusable="false">
-        <path className="logo-sim-card" d="M15 6h16.5L40 14.5V38a4 4 0 0 1-4 4H15a7 7 0 0 1-7-7V13a7 7 0 0 1 7-7Z" />
-        <path className="logo-sim-corner" d="M31 7v6.5a3 3 0 0 0 3 3H39" />
-        <path className="logo-glyph" d="M29.5 22.2a8.8 8.8 0 1 0 1.7 7.5h-6.9" />
-        <path className="logo-contact-line" d="M17 34h5.8" />
-        <circle className="logo-contact-dot" cx="33.5" cy="30.5" r="1.9" />
-        <circle className="logo-contact-dot" cx="33.5" cy="35.5" r="1.9" />
-      </svg>
+      <img src={logoMarkSrc} alt="" draggable="false" />
     </span>
   );
 }
@@ -356,6 +406,15 @@ function GridIcon() {
   );
 }
 
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m5 19 4.1-1 9.4-9.4a2.1 2.1 0 0 0-3-3L6.1 15 5 19Z" />
+      <path d="m14.7 6.3 3 3" />
+    </svg>
+  );
+}
+
 function SearchIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -374,10 +433,39 @@ function CameraIcon() {
   );
 }
 
+function ImageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="4" y="5" width="16" height="14" rx="2" />
+      <circle cx="9" cy="10" r="1.6" />
+      <path d="m6.5 17 4.1-4.1 2.6 2.6 2.1-2.1L19 17" />
+    </svg>
+  );
+}
+
 function CloseIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="m6 6 12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+function MoreIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="5" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="12" cy="19" r="1.6" />
+    </svg>
+  );
+}
+
+function BackIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M19 12H5" />
+      <path d="m11 6-6 6 6 6" />
     </svg>
   );
 }
@@ -530,28 +618,245 @@ function SettingsRow(props: {
   return <div className="settings-row settings-row-static">{content}</div>;
 }
 
+function ProfilePictureModal({
+  user,
+  setUser,
+  onClose
+}: {
+  user: User;
+  setUser: (user: User) => void;
+  onClose: () => void;
+}) {
+  const [view, setView] = useState<"change" | "history">("change");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [history, setHistory] = useState<AvatarHistoryItem[]>(user.avatar_history ?? []);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuPresence = useMotionPresence(menuOpen, MOTION_FAST_MS);
+  const selectedFileName = selectedFile?.name ?? "No file selected";
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape" && !busy) onClose();
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [busy, onClose]);
+
+  useEffect(() => {
+    function closeMenuOnOutsideClick(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (menuRef.current && !menuRef.current.contains(target)) {
+        setMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", closeMenuOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeMenuOnOutsideClick);
+  }, []);
+
+  async function loadAvatarHistory() {
+    setHistoryLoading(true);
+    setError(null);
+    try {
+      setHistory(await api.listAvatarHistory());
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Profile picture history could not be loaded.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function openHistoryView() {
+    setMenuOpen(false);
+    setView("history");
+    void loadAvatarHistory();
+  }
+
+  async function restorePicture(item: AvatarHistoryItem) {
+    setBusy(true);
+    setError(null);
+    try {
+      const updatedUser = await api.restoreAvatar(item.public_id);
+      setUser(updatedUser);
+      setHistory(updatedUser.avatar_history);
+      setView("change");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Profile picture could not be restored.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function savePicture(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      if (!selectedFile) {
+        setError("Choose an image to upload.");
+        return;
+      }
+      setUser(await api.uploadAvatar(selectedFile));
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Profile image upload failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const menu = (
+    <div className="picture-menu-wrap" ref={menuRef}>
+      <button
+        type="button"
+        className={`picture-more-button ${menuOpen ? "active" : ""}`}
+        aria-label="More profile picture options"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((open) => !open)}
+        disabled={busy}
+      >
+        <MoreIcon />
+      </button>
+      {menuPresence.mounted && (
+        <div className="picture-more-menu" role="menu" data-state={menuPresence.state}>
+          <button type="button" role="menuitem" disabled>
+            Profile picture visibility
+          </button>
+          <button type="button" role="menuitem" className={view === "history" ? "active" : ""} onClick={openHistoryView}>
+            Past profile pictures
+          </button>
+          <button type="button" role="menuitem" disabled>
+            Birthday settings
+          </button>
+          <button type="button" role="menuitem" disabled>
+            Remove profile picture
+          </button>
+          <button type="button" role="menuitem" disabled>
+            Help
+          </button>
+          <button type="button" role="menuitem" disabled>
+            Send feedback
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  if (view === "history") {
+    return (
+      <div className="picture-modal-card picture-history-card">
+        <div className="picture-history-header">
+          <button type="button" className="picture-back-button" aria-label="Back to change profile picture" onClick={() => setView("change")} disabled={busy}>
+            <BackIcon />
+          </button>
+          <h1>Past profile pictures</h1>
+          {menu}
+        </div>
+
+        <div className="picture-history-grid" aria-busy={historyLoading}>
+          {history.map((item) => (
+            <button
+              key={item.public_id}
+              type="button"
+              className="picture-history-item"
+              aria-label="Restore this profile picture"
+              onClick={() => restorePicture(item)}
+              disabled={busy || historyLoading}
+            >
+              <img src={item.url} alt="" />
+            </button>
+          ))}
+        </div>
+
+        <Alert message={error} />
+      </div>
+    );
+  }
+
+  return (
+    <form className="picture-modal-card" onSubmit={savePicture}>
+      <div className="picture-modal-header">
+        <button type="button" className="picture-close-button" aria-label="Close profile picture" onClick={onClose} disabled={busy}>
+          <CloseIcon />
+        </button>
+        <h1>Change profile picture</h1>
+        {menu}
+      </div>
+
+      <div className="picture-avatar-stage">
+        <Avatar user={user} />
+        <span aria-hidden="true">
+          <CameraIcon />
+        </span>
+      </div>
+
+      <div className="picture-action-list">
+        <label className="picture-action-row">
+          <span className="picture-action-icon">
+            <ImageIcon />
+          </span>
+          <span>
+            <strong>Upload from device</strong>
+            <small>{selectedFileName}</small>
+          </span>
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
+        </label>
+        <button type="button" className="picture-action-row" disabled>
+          <span className="picture-action-icon">
+            <CameraIcon />
+          </span>
+          <span>
+            <strong>Take a picture</strong>
+            <small>Camera capture is not available yet.</small>
+          </span>
+        </button>
+      </div>
+
+      <Alert message={error} />
+      <div className="button-row picture-buttons">
+        <button className="primary" disabled={busy || !selectedFile}>
+          {busy ? "Saving..." : "Save"}
+        </button>
+        <button type="button" className="secondary" onClick={onClose} disabled={busy}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function Shell({
   user,
+  setUser,
   route,
   children,
   onLogout
 }: {
   user: User;
+  setUser: (user: User) => void;
   route: ConsoleRoute;
   children: ReactNode;
   onLogout: () => void;
 }) {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
+  const [appsLauncherOpen, setAppsLauncherOpen] = useState(false);
+  const [pictureModalOpen, setPictureModalOpen] = useState(false);
   const [topbarQuery, setTopbarQuery] = useState("");
   const accountMenuRef = useRef<HTMLDivElement>(null);
-  const sectionMenuRef = useRef<HTMLDivElement>(null);
+  const appsLauncherRef = useRef<HTMLDivElement>(null);
+  const accountMenuPresence = useMotionPresence(accountMenuOpen, MOTION_FAST_MS);
+  const appsLauncherPresence = useMotionPresence(appsLauncherOpen, MOTION_FAST_MS);
 
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setAccountMenuOpen(false);
-        setSectionMenuOpen(false);
+        setAppsLauncherOpen(false);
       }
     }
 
@@ -561,8 +866,8 @@ function Shell({
       if (accountMenuRef.current && !accountMenuRef.current.contains(target)) {
         setAccountMenuOpen(false);
       }
-      if (sectionMenuRef.current && !sectionMenuRef.current.contains(target)) {
-        setSectionMenuOpen(false);
+      if (appsLauncherRef.current && !appsLauncherRef.current.contains(target)) {
+        setAppsLauncherOpen(false);
       }
     }
 
@@ -576,8 +881,14 @@ function Shell({
 
   const navigateConsole = (nextRoute: ConsoleRoute) => {
     setAccountMenuOpen(false);
-    setSectionMenuOpen(false);
+    setAppsLauncherOpen(false);
     go(nextRoute);
+  };
+
+  const openProfilePictureModal = () => {
+    setAccountMenuOpen(false);
+    setAppsLauncherOpen(false);
+    setPictureModalOpen(true);
   };
 
   function submitTopbarSearch(event: FormEvent) {
@@ -625,28 +936,29 @@ function Shell({
             />
           </form>
 
-          <div className="section-menu" ref={sectionMenuRef}>
+          <div className="apps-menu" ref={appsLauncherRef}>
             <button
               className="icon-button"
-              aria-label="Open account sections"
-              aria-expanded={sectionMenuOpen}
+              aria-label="Open apps launcher"
+              aria-expanded={appsLauncherOpen}
               onClick={() => {
-                setSectionMenuOpen((open) => !open);
+                setAppsLauncherOpen((open) => !open);
                 setAccountMenuOpen(false);
               }}
             >
               <GridIcon />
             </button>
-            {sectionMenuOpen && (
-              <div className="section-popover">
-                {CONSOLE_NAV.map((item) => (
-                  <button key={item.route} onClick={() => navigateConsole(item.route)}>
-                    <span className={`nav-icon nav-icon-${item.tone}`}>
-                      <ConsoleIcon icon={item.icon} />
-                    </span>
-                    <span>{item.label}</span>
-                  </button>
-                ))}
+            {appsLauncherPresence.mounted && (
+              <div className="apps-popover" role="dialog" aria-label="Apps launcher" data-state={appsLauncherPresence.state}>
+                <div className="apps-launcher-panel">
+                  <div className="apps-launcher-header">
+                    <h2>Your favourites</h2>
+                    <button className="apps-edit-button" aria-label="Edit favourite apps" disabled>
+                      <PencilIcon />
+                    </button>
+                  </div>
+                  <div className="apps-launcher-body" />
+                </div>
               </div>
             )}
           </div>
@@ -658,20 +970,20 @@ function Shell({
               aria-expanded={accountMenuOpen}
               onClick={() => {
                 setAccountMenuOpen((open) => !open);
-                setSectionMenuOpen(false);
+                setAppsLauncherOpen(false);
               }}
             >
               <Avatar user={user} />
             </button>
-            {accountMenuOpen && (
-              <div className="account-popover" role="menu">
+            {accountMenuPresence.mounted && (
+              <div className="account-popover" role="menu" data-state={accountMenuPresence.state}>
                 <button className="popover-close" aria-label="Close account menu" onClick={() => setAccountMenuOpen(false)}>
                   <CloseIcon />
                 </button>
                 <div className="account-popover-email">{user.email}</div>
                 <div className="account-popover-avatar">
                   <Avatar user={user} />
-                  <button aria-label="Manage profile image" onClick={() => navigateConsole("profile")}>
+                  <button aria-label="Manage profile image" onClick={openProfilePictureModal}>
                     <CameraIcon />
                   </button>
                 </div>
@@ -687,9 +999,142 @@ function Shell({
             )}
           </div>
         </header>
-        <main className="main">{children}</main>
+        <main className="main">
+          <div key={route} className="motion-page" data-state="open">
+            {children}
+          </div>
+        </main>
       </div>
+      {pictureModalOpen && (
+        <div
+          className="picture-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Change profile picture"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPictureModalOpen(false);
+          }}
+        >
+          <ProfilePictureModal user={user} setUser={setUser} onClose={() => setPictureModalOpen(false)} />
+        </div>
+      )}
     </div>
+  );
+}
+
+function ProfileEditDetailShell({
+  user,
+  setUser,
+  title,
+  children,
+  onLogout
+}: {
+  user: User;
+  setUser: (user: User) => void;
+  title: string;
+  children: ReactNode;
+  onLogout: () => void;
+}) {
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [pictureModalOpen, setPictureModalOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+  const accountMenuPresence = useMotionPresence(accountMenuOpen, MOTION_FAST_MS);
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setAccountMenuOpen(false);
+    }
+
+    function closeOnOutsideClick(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (accountMenuRef.current && !accountMenuRef.current.contains(target)) {
+        setAccountMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+    };
+  }, []);
+
+  const navigateConsole = (nextRoute: ConsoleRoute) => {
+    setAccountMenuOpen(false);
+    go(nextRoute);
+  };
+
+  const openProfilePictureModal = () => {
+    setAccountMenuOpen(false);
+    setPictureModalOpen(true);
+  };
+
+  return (
+    <main className="profile-edit-shell">
+      <header className="profile-edit-topbar">
+        <button className="brand profile-edit-brand" onClick={() => navigateConsole("account")}>
+          <LogoMark />
+          <span>{PRODUCT_NAME}</span>
+        </button>
+        <div className="account-menu" ref={accountMenuRef}>
+          <button
+            className="avatar-button"
+            aria-label="Open account menu"
+            aria-expanded={accountMenuOpen}
+            onClick={() => setAccountMenuOpen((open) => !open)}
+          >
+            <Avatar user={user} />
+          </button>
+          {accountMenuPresence.mounted && (
+            <div className="account-popover profile-edit-account-popover" role="menu" data-state={accountMenuPresence.state}>
+              <button className="popover-close" aria-label="Close account menu" onClick={() => setAccountMenuOpen(false)}>
+                <CloseIcon />
+              </button>
+              <div className="account-popover-email">{user.email}</div>
+              <div className="account-popover-avatar">
+                <Avatar user={user} />
+                <button aria-label="Manage profile image" onClick={openProfilePictureModal}>
+                  <CameraIcon />
+                </button>
+              </div>
+              <h2>Hi, {user.display_name}!</h2>
+              <button className="account-manage-button" onClick={() => navigateConsole("profile")}>
+                Manage your {PRODUCT_NAME}
+              </button>
+              <div className="account-popover-actions">
+                <button onClick={onLogout}>Sign out</button>
+              </div>
+              <div className="account-popover-footer">Profile details and sign-in protection stay private to you.</div>
+            </div>
+          )}
+        </div>
+      </header>
+
+      <section key={title} className="profile-edit-stage motion-page" data-state="open">
+        <div className="profile-edit-header">
+          <button className="profile-edit-back" aria-label="Back to personal info" onClick={() => go("profile")}>
+            <BackIcon />
+          </button>
+          <h1>{title}</h1>
+        </div>
+        {children}
+      </section>
+      {pictureModalOpen && (
+        <div
+          className="picture-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Change profile picture"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPictureModalOpen(false);
+          }}
+        >
+          <ProfilePictureModal user={user} setUser={setUser} onClose={() => setPictureModalOpen(false)} />
+        </div>
+      )}
+    </main>
   );
 }
 
@@ -1534,8 +1979,10 @@ function ProfileOnboardingPage({
 // Account Screens
 // ###############################################
 
-function AccountHomePage({ user }: { user: User }) {
+function AccountHomePage({ user, setUser }: { user: User; setUser: (user: User) => void }) {
   const [query, setQuery] = useState("");
+  const [pictureModalOpen, setPictureModalOpen] = useState(false);
+  const pictureModalPresence = useMotionPresence(pictureModalOpen, MOTION_BASE_MS);
 
   function search(event: FormEvent) {
     event.preventDefault();
@@ -1545,12 +1992,12 @@ function AccountHomePage({ user }: { user: User }) {
   return (
     <section className="account-home">
       <div className="home-identity">
-        <div className="home-avatar-wrap">
+        <button className="home-avatar-wrap" aria-label="Change profile picture" onClick={() => setPictureModalOpen(true)}>
           <Avatar user={user} />
-          <button aria-label="Change profile image" onClick={() => go("profile")}>
+          <span aria-hidden="true">
             <CameraIcon />
-          </button>
-        </div>
+          </span>
+        </button>
         <h1>{user.display_name}</h1>
         <p>{user.email}</p>
       </div>
@@ -1575,6 +2022,21 @@ function AccountHomePage({ user }: { user: User }) {
       <p className="home-privacy-note">
         Only you can see your settings. Review your profile details, password, devices, and sign-in protection from this account center.
       </p>
+
+      {pictureModalPresence.mounted && (
+        <div
+          className="picture-modal-overlay"
+          data-state={pictureModalPresence.state}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Change profile picture"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPictureModalOpen(false);
+          }}
+        >
+          <ProfilePictureModal user={user} setUser={setUser} onClose={() => setPictureModalOpen(false)} />
+        </div>
+      )}
     </section>
   );
 }
@@ -1629,35 +2091,14 @@ function ProfileEditPage({
   const [dateOfBirth, setDateOfBirth] = useState(user.date_of_birth ?? "");
   const [locale, setLocale] = useState(user.locale ?? "");
   const [timezone, setTimezone] = useState(user.timezone ?? "");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const titleByField: Record<ProfileEditField, string> = {
-    picture: "Profile picture",
-    name: "Name",
-    gender: "Gender",
-    phone: "Phone",
-    birthday: "Birthday",
-    language: "Language",
-    timezone: "Timezone"
-  };
 
   async function saveProfile(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      if (field === "picture") {
-        if (!selectedFile) {
-          setError("Choose an image to upload.");
-          return;
-        }
-        setUser(await api.uploadAvatar(selectedFile));
-        go("profile");
-        return;
-      }
-
       let payload: ProfileUpdatePayload;
       if (field === "name") {
         payload = {
@@ -1703,23 +2144,54 @@ function ProfileEditPage({
     }
   }
 
+  if (field === "picture") {
+    return (
+      <section className="picture-edit-page">
+        <ProfilePictureModal user={user} setUser={setUser} onClose={() => go("profile")} />
+      </section>
+    );
+  }
+
+  const detailByField: Record<Exclude<ProfileEditField, "picture">, { label: string; description: string }> = {
+    name: {
+      label: "Account name",
+      description: `Your name is shown in ${PRODUCT_NAME} and apps that use this account.`
+    },
+    gender: {
+      label: "Personal detail",
+      description: "Choose the gender value you want saved with your profile."
+    },
+    phone: {
+      label: user.phone_verified ? "Phone verified" : "Phone not verified",
+      description: "Phone numbers are saved to your profile. Text message verification is not available yet."
+    },
+    birthday: {
+      label: "Birthday",
+      description: "Your date of birth is optional and can be changed from this page."
+    },
+    language: {
+      label: "Language",
+      description: "Set the locale you prefer for account experiences that support it."
+    },
+    timezone: {
+      label: "Timezone",
+      description: "Set the timezone used for account activity and time-based details."
+    }
+  };
+  const editDetail = detailByField[field];
+
   return (
-    <SettingsPage title={titleByField[field]}>
-      <form className="settings-edit-card" onSubmit={saveProfile}>
-        {field === "picture" && (
-          <>
-            <div className="profile-picture-edit">
-              <Avatar user={user} />
-            </div>
-            <label className="field field-full">
-              <span>Profile image</span>
-              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
-            </label>
-          </>
-        )}
+    <form className="profile-edit-card" onSubmit={saveProfile}>
+      <div className="profile-edit-card-copy">
+        <span>{editDetail.label}</span>
+        <p>{editDetail.description}</p>
+      </div>
+      <div className="profile-edit-fields">
         {field === "name" && (
-          <div className="form-grid">
-            <Field label="Display name" value={displayName} onChange={setDisplayName} required />
+          <div className="profile-name-grid">
+            <div className="profile-name-full">
+              <Field label="Display name" value={displayName} onChange={setDisplayName} required />
+            </div>
             <Field label="First name" value={firstName} onChange={setFirstName} />
             <Field label="Last name" value={lastName} onChange={setLastName} />
           </div>
@@ -1751,17 +2223,17 @@ function ProfileEditPage({
         {field === "timezone" && (
           <Field label="Timezone" value={timezone} onChange={setTimezone} placeholder="Asia/Kuala_Lumpur" />
         )}
-        <Alert message={error} />
-        <div className="button-row">
-          <button className="primary" disabled={busy}>
-            {busy ? "Saving..." : "Save"}
-          </button>
-          <button type="button" className="secondary" onClick={() => go("profile")} disabled={busy}>
-            Cancel
-          </button>
-        </div>
-      </form>
-    </SettingsPage>
+      </div>
+      <Alert message={error} />
+      <div className="button-row profile-edit-actions">
+        <button className="primary" disabled={busy}>
+          {busy ? "Saving..." : "Save"}
+        </button>
+        <button type="button" className="secondary" onClick={() => go("profile")} disabled={busy}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -1890,119 +2362,156 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
   }
 
   return (
-    <section className="content-grid">
-      <div className="panel">
-        <div className="panel-header">
-          <h2>Password</h2>
-          <p>Change the password for your {PRODUCT_NAME} account.</p>
-        </div>
-        <form className="form-stack" onSubmit={changePassword}>
-          <Field label="Current password" type="password" value={currentPassword} onChange={setCurrentPassword} />
-          <Field label="New password" type="password" value={newPassword} onChange={setNewPassword} />
-          <button className="primary" disabled={busy}>
-            Change password
-          </button>
-        </form>
-      </div>
+    <SettingsPage title="Security and sign-in">
+      <button className="settings-tip-card" onClick={() => setExpandedSection("verification")}>
+        <span className="tip-icon">
+          <SettingIcon name="shield" />
+        </span>
+        <span>
+          <strong>{user.mfa_enabled ? "Your account has extra protection" : "Add extra sign-in protection"}</strong>
+          <span>{user.mfa_enabled ? "A verification code is required when this account signs in." : "Turn on verification to add another check when signing in."}</span>
+        </span>
+      </button>
 
-      <div className="panel">
-        <div className="panel-header">
-          <h2>Sign-in protection</h2>
-          <p>{user.mfa_enabled ? "A verification code is required when this account signs in." : "Extra sign-in protection is currently turned off."}</p>
-        </div>
-        {setup ? (
-          <MfaSetupPanel setup={setup} onAuthenticated={onMfaEnabled} />
-        ) : user.mfa_enabled ? (
-          <form className="form-stack" onSubmit={disableMfa}>
-            <Field label="Current password" type="password" value={mfaPassword} onChange={setMfaPassword} />
-            <Field label="Verification code" value={mfaCode} onChange={setMfaCode} />
-            <button className="secondary" disabled={busy}>
-              Turn off extra verification
-            </button>
-          </form>
-        ) : (
-          <button className="primary" onClick={enableMfa} disabled={busy}>
-            Turn on extra verification
-          </button>
-        )}
-        <Alert message={error} />
-        <Alert message={message} tone="success" />
-      </div>
-
-      <div className="panel wide-panel">
-        <div className="panel-header split-header">
-          <div>
-            <h2>Active sessions</h2>
-            <p>Review the devices currently signed in to your account.</p>
-          </div>
-          <button className="secondary" onClick={logoutOtherSessions} disabled={securityAction !== null || sessions.length <= 1}>
-            {securityAction === "logout-others" ? "Signing out..." : "Sign out other devices"}
-          </button>
-        </div>
-        <Alert message={securityError} />
-        {securityLoading ? (
-          <Alert message="Loading sessions..." tone="info" />
-        ) : sessions.length === 0 ? (
-          <div className="empty-inline">No active sessions found.</div>
-        ) : (
-          <div className="record-list">
-            {sessions.map((session) => (
-              <div className="record-item" key={session.id}>
-                <div>
-                  <div className="record-title">
-                    <strong>{displayValue(session.device_label, "Unknown device")}</strong>
-                    {session.is_current && <span className="current-badge">Current</span>}
-                  </div>
-                  <p>{displayValue(session.user_agent, "No user agent")}</p>
-                  <div className="record-meta">
-                    <span>Login IP: {displayValue(session.login_ip_address)}</span>
-                    <span>Last IP: {displayValue(session.last_seen_ip_address)}</span>
-                    <span>Last seen: {formatDateTime(session.last_seen_at)}</span>
-                    <span>Expires: {formatDateTime(session.expires_at)}</span>
-                  </div>
+      <div className="settings-section">
+        <h2>Recent security activity</h2>
+        <p>{securityLoading ? "Loading recent activity..." : latestSecurityEvent(events)}</p>
+        <div className="settings-group">
+          <SettingsRow
+            icon="activity"
+            title="Security activity"
+            value={events.length === 0 ? "No security activity or alerts in the last 28 days" : `${events.length} recent events`}
+            onClick={() => setExpandedSection(expandedSection === "activity" ? null : "activity")}
+          />
+          <MotionPanel open={expandedSection === "activity"}>
+              <Alert message={securityError} />
+              {securityLoading ? (
+                <Alert message="Loading activity..." tone="info" />
+              ) : events.length === 0 ? (
+                <div className="empty-inline">No security activity found.</div>
+              ) : (
+                <div className="record-list">
+                  {events.map((event) => (
+                    <div className="record-item event-item" key={event.id}>
+                      <div>
+                        <div className="record-title">
+                          <strong>{humanize(event.event_type)}</strong>
+                          <span>{formatDateTime(event.created_at)}</span>
+                        </div>
+                        <p>{displayValue(event.device_label, "Unknown device")}</p>
+                        <div className="record-meta">
+                          <span>IP: {displayValue(event.ip_address)}</span>
+                          <span>User agent: {displayValue(event.user_agent)}</span>
+                        </div>
+                        <div className="metadata-line">{metadataSummary(event.metadata)}</div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                {!session.is_current && (
-                  <button className="secondary" onClick={() => revokeSession(session)} disabled={securityAction !== null}>
-                    {securityAction === session.id ? "Signing out..." : "Sign out"}
+              )}
+          </MotionPanel>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <h2>How you sign in</h2>
+        <p>Keep these settings up to date so you can always access your account.</p>
+        <div className="settings-group">
+          <SettingsRow
+            icon="shield"
+            title="Extra verification"
+            value={user.mfa_enabled ? "On" : "Off"}
+            onClick={() => setExpandedSection(expandedSection === "verification" ? null : "verification")}
+          />
+          <MotionPanel open={expandedSection === "verification"}>
+              {setup ? (
+                <MfaSetupPanel setup={setup} onAuthenticated={onMfaEnabled} />
+              ) : user.mfa_enabled ? (
+                <form className="form-stack" onSubmit={disableMfa}>
+                  <Field label="Current password" type="password" value={mfaPassword} onChange={setMfaPassword} />
+                  <Field label="Verification code" value={mfaCode} onChange={setMfaCode} />
+                  <button className="secondary" disabled={busy}>
+                    Turn off extra verification
                   </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+                </form>
+              ) : (
+                <button className="primary" onClick={enableMfa} disabled={busy}>
+                  Turn on extra verification
+                </button>
+              )}
+              <Alert message={error} />
+              <Alert message={message} tone="success" />
+          </MotionPanel>
 
-      <div className="panel wide-panel">
-        <div className="panel-header">
-          <h2>Recent security activity</h2>
-          <p>Recent sign-in, profile, and account protection events.</p>
-        </div>
-        {securityLoading ? (
-          <Alert message="Loading activity..." tone="info" />
-        ) : events.length === 0 ? (
-          <div className="empty-inline">No security activity found.</div>
-        ) : (
-          <div className="record-list">
-            {events.map((event) => (
-              <div className="record-item event-item" key={event.id}>
+          <SettingsRow
+            icon="key"
+            title="Password"
+            value="Change your account password"
+            onClick={() => setExpandedSection(expandedSection === "password" ? null : "password")}
+          />
+          <MotionPanel open={expandedSection === "password"}>
+              <form className="form-stack" onSubmit={changePassword}>
+                <Field label="Current password" type="password" value={currentPassword} onChange={setCurrentPassword} />
+                <Field label="New password" type="password" value={newPassword} onChange={setNewPassword} />
+                <button className="primary" disabled={busy}>
+                  Change password
+                </button>
+              </form>
+              <Alert message={error} />
+              <Alert message={message} tone="success" />
+          </MotionPanel>
+
+          <SettingsRow
+            icon="devices"
+            title="Active sessions"
+            value={securityLoading ? "Loading sessions..." : `${sessions.length} active ${sessions.length === 1 ? "session" : "sessions"}`}
+            onClick={() => setExpandedSection(expandedSection === "sessions" ? null : "sessions")}
+          />
+          <MotionPanel open={expandedSection === "sessions"}>
+              <div className="split-header compact-header">
                 <div>
-                  <div className="record-title">
-                    <strong>{humanize(event.event_type)}</strong>
-                    <span>{formatDateTime(event.created_at)}</span>
-                  </div>
-                  <p>{displayValue(event.device_label, "Unknown device")}</p>
-                  <div className="record-meta">
-                    <span>IP: {displayValue(event.ip_address)}</span>
-                    <span>User agent: {displayValue(event.user_agent)}</span>
-                  </div>
-                  <div className="metadata-line">{metadataSummary(event.metadata)}</div>
+                  <h3>Devices signed in</h3>
+                  <p>Review the devices currently signed in to your account.</p>
                 </div>
+                <button className="secondary" onClick={logoutOtherSessions} disabled={securityAction !== null || sessions.length <= 1}>
+                  {securityAction === "logout-others" ? "Signing out..." : "Sign out other devices"}
+                </button>
               </div>
-            ))}
-          </div>
-        )}
+              <Alert message={securityError} />
+              {securityLoading ? (
+                <Alert message="Loading sessions..." tone="info" />
+              ) : sessions.length === 0 ? (
+                <div className="empty-inline">No active sessions found.</div>
+              ) : (
+                <div className="record-list">
+                  {sessions.map((session) => (
+                    <div className="record-item" key={session.id}>
+                      <div>
+                        <div className="record-title">
+                          <strong>{displayValue(session.device_label, "Unknown device")}</strong>
+                          {session.is_current && <span className="current-badge">Current</span>}
+                        </div>
+                        <p>{displayValue(session.user_agent, "No user agent")}</p>
+                        <div className="record-meta">
+                          <span>Login IP: {displayValue(session.login_ip_address)}</span>
+                          <span>Last IP: {displayValue(session.last_seen_ip_address)}</span>
+                          <span>Last seen: {formatDateTime(session.last_seen_at)}</span>
+                          <span>Expires: {formatDateTime(session.expires_at)}</span>
+                        </div>
+                      </div>
+                      {!session.is_current && (
+                        <button className="secondary" onClick={() => revokeSession(session)} disabled={securityAction !== null}>
+                          {securityAction === session.id ? "Signing out..." : "Sign out"}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+          </MotionPanel>
+        </div>
       </div>
-    </section>
+    </SettingsPage>
   );
 }
 
@@ -2055,8 +2564,8 @@ export default function App() {
 
   const protectedPage = useMemo(() => {
     if (route === "security" && user) return <SecurityPage user={user} setUser={setUser} />;
-    if (route === "profile" && user) return <ProfilePage user={user} setUser={setUser} />;
-    if (route === "account" && user) return <AccountHomePage user={user} />;
+    if (route === "profile" && user) return <ProfilePage user={user} />;
+    if (route === "account" && user) return <AccountHomePage user={user} setUser={setUser} />;
     return null;
   }, [route, setUser, user]);
 
@@ -2068,10 +2577,21 @@ export default function App() {
   if (route === "profile-onboarding" && user) {
     return <ProfileOnboardingPage user={user} setUser={setUser} onFinished={finishOnboarding} />;
   }
-  if (loading || !user || !protectedPage) return <StandaloneAccessState loading={loading} />;
+  if (loading || !user) return <StandaloneAccessState loading={loading} />;
+  if (route === "profile-edit") {
+    const field = profileEditField();
+    return (
+      <ProfileEditDetailShell user={user} setUser={setUser} title={profileEditTitle(field)} onLogout={onLogout}>
+        <ProfileEditPage user={user} setUser={setUser} field={field} />
+      </ProfileEditDetailShell>
+    );
+  }
+  if (!protectedPage) return <StandaloneAccessState loading={loading} />;
+
+  const activeConsoleRoute = route as ConsoleRoute;
 
   return (
-    <Shell user={user} route={route as ConsoleRoute} onLogout={onLogout}>
+    <Shell user={user} setUser={setUser} route={activeConsoleRoute} onLogout={onLogout}>
       {protectedPage}
     </Shell>
   );

@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 00:31
+# Updated at: 2026-05-12 02:17
 # Description: SQLAlchemy ORM models for Portal accounts, profile data, sessions, audit events, MFA, and OIDC.
 
 from __future__ import annotations
@@ -60,6 +60,7 @@ class User(Base, TimestampMixin):
     timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     avatar_public_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    avatar_history: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     profile_onboarding_skipped_fields: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     profile_onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)

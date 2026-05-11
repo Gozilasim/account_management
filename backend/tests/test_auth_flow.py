@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 01:23
+# Updated at: 2026-05-12 02:42
 # Description: Backend tests for MFA, OIDC, and avatar flows.
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def make_client():
         finally:
             db.close()
 
-    app = create_app()
+    app = create_app(sync_oidc_clients_on_startup=False)
     app.dependency_overrides[get_db] = override_db
     return TestClient(app), TestingSessionLocal
 
@@ -536,10 +536,16 @@ def test_avatar_upload_rejects_non_image():
     assert response.status_code == 400
 
 
-def test_avatar_upload_replaces_previous_cloudinary_asset(monkeypatch):
+def test_avatar_upload_preserves_previous_assets_in_history(monkeypatch):
     client, _ = make_client()
     enroll_user(client)
-    uploads = iter([("avatar/one", "https://cdn.example/one.png"), ("avatar/two", "https://cdn.example/two.png")])
+    uploads = iter(
+        [
+            ("avatar/one", "https://cdn.example/one.png"),
+            ("avatar/two", "https://cdn.example/two.png"),
+            ("avatar/three", "https://cdn.example/three.png"),
+        ]
+    )
     deleted: list[str] = []
 
     def fake_upload_avatar(user, content):
@@ -561,9 +567,40 @@ def test_avatar_upload_replaces_previous_cloudinary_asset(monkeypatch):
         "/api/profile/avatar",
         files={"avatar": ("avatar.png", b"second-image", "image/png")},
     )
+    third = client.post(
+        "/api/profile/avatar",
+        files={"avatar": ("avatar.png", b"third-image", "image/png")},
+    )
 
     assert first.status_code == 200
     assert first.json()["avatar_url"] == "https://cdn.example/one.png"
+    assert first.json()["avatar_history"] == []
     assert second.status_code == 200
     assert second.json()["avatar_url"] == "https://cdn.example/two.png"
-    assert deleted == ["avatar/one"]
+    assert [item["public_id"] for item in second.json()["avatar_history"]] == ["avatar/one"]
+    assert third.status_code == 200
+    assert third.json()["avatar_url"] == "https://cdn.example/three.png"
+    assert [item["public_id"] for item in third.json()["avatar_history"]] == ["avatar/one", "avatar/two"]
+    assert deleted == []
+
+    me = client.get("/api/auth/me")
+    assert me.status_code == 200
+    assert [item["public_id"] for item in me.json()["avatar_history"]] == ["avatar/one", "avatar/two"]
+
+    history = client.get("/api/profile/avatar/history")
+    assert history.status_code == 200
+    assert [item["public_id"] for item in history.json()] == ["avatar/one", "avatar/two"]
+
+    restored = client.post("/api/profile/avatar/restore", json={"public_id": "avatar/one"})
+    assert restored.status_code == 200
+    assert restored.json()["avatar_url"] == "https://cdn.example/one.png"
+    assert [item["public_id"] for item in restored.json()["avatar_history"]] == ["avatar/two", "avatar/three"]
+
+    delete_current = client.delete("/api/profile/avatar/history/avatar/one")
+    assert delete_current.status_code == 400
+
+    deleted_history = client.delete("/api/profile/avatar/history/avatar/two")
+    assert deleted_history.status_code == 200
+    assert deleted == ["avatar/two"]
+    remaining = client.get("/api/profile/avatar/history")
+    assert [item["public_id"] for item in remaining.json()] == ["avatar/three"]

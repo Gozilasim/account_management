@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 00:31
+# Updated at: 2026-05-12 02:42
 # Description: CLI helper to create or update OIDC clients.
 
 from __future__ import annotations
@@ -7,11 +7,8 @@ from __future__ import annotations
 import argparse
 import secrets
 
-from sqlalchemy import select
-
 from app.database import SessionLocal
-from app.models import OidcClient
-from app.security import hash_password
+from app.oidc_clients import upsert_oidc_client
 
 
 def main() -> None:
@@ -25,19 +22,15 @@ def main() -> None:
 
     client_secret = None if args.public else secrets.token_urlsafe(32)
     with SessionLocal() as db:
-        client = db.scalar(select(OidcClient).where(OidcClient.client_id == args.client_id))
-        if client is None:
-            client = OidcClient(client_id=args.client_id, name=args.name)
-            db.add(client)
-
-        client.name = args.name
-        client.redirect_uris = args.redirect_uri
-        client.allowed_scopes = args.scope
-        client.is_confidential = not args.public
-        if client_secret:
-            client.client_secret_hash = hash_password(client_secret)
-        elif args.public:
-            client.client_secret_hash = None
+        upsert_oidc_client(
+            db,
+            client_id=args.client_id,
+            name=args.name,
+            redirect_uris=args.redirect_uri,
+            allowed_scopes=args.scope,
+            public=args.public,
+            client_secret=client_secret,
+        )
         db.commit()
 
     print(f"client_id={args.client_id}")

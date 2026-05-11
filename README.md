@@ -1,6 +1,6 @@
 <!--
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-12 01:23
+Updated at: 2026-05-12 02:42
 Description: Setup and usage guide for the unified account Portal.
 -->
 
@@ -127,6 +127,9 @@ GET /api/auth/sessions
 DELETE /api/auth/sessions/{session_id}
 POST /api/auth/sessions/logout-others
 GET /api/auth/security-events
+GET /api/profile/avatar/history
+POST /api/profile/avatar/restore
+DELETE /api/profile/avatar/history/{public_id}
 ```
 
 Session 会记录 login IP、last seen IP、User-Agent 和 device label。默认只信任 `request.client.host`；部署在反向代理后面时，确认代理可信再设置：
@@ -135,19 +138,27 @@ Session 会记录 login IP、last seen IP、User-Agent 和 device label。默认
 TRUST_PROXY_HEADERS=true
 ```
 
-## 建立 OIDC Client
+Avatar history 存在 `users.avatar_history` JSON 里。用户换头像时旧 Cloudinary 图片会保留并进入历史列表；只有调用删除历史头像 API 时才会删除对应 Cloudinary asset。
 
-示例：
+## OIDC Integrated Apps
+
+Portal backend 启动时会读取根目录 `.env` 的 `OIDC_CLIENTS_JSON`，并自动注册或更新 integrated apps。不需要手动改 DB。
+
+```env
+OIDC_CLIENTS_JSON=[{"client_id":"media-editor-dev","name":"Media Editor Dev","redirect_uris":["http://localhost:3001/auth/callback"],"allowed_scopes":["openid","email","profile","phone"],"public":true}]
+```
+
+`client_id` 和 `redirect_uri` 必须和接入 app 的 `.env` 完全一致。`seed_client` 脚本仍保留给一次性维护使用：
 
 ```powershell
 cd backend
-python -m app.scripts.seed_client --client-id media-editor-dev --name "Media Editor Dev" --redirect-uri "http://localhost:3000/auth/callback" --public
+python -m app.scripts.seed_client --client-id media-editor-dev --name "Media Editor Dev" --redirect-uri "http://localhost:3001/auth/callback" --public
 ```
 
 其他 project 的登录入口指向：
 
 ```text
-GET /oauth/authorize?response_type=code&client_id=media-editor-dev&redirect_uri=http://localhost:3000/auth/callback&scope=openid email profile phone&state=...&code_challenge=...&code_challenge_method=S256
+GET /oauth/authorize?response_type=code&client_id=media-editor-dev&redirect_uri=http://localhost:3001/auth/callback&scope=openid email profile phone&state=...&code_challenge=...&code_challenge_method=S256
 ```
 
 如果用户还没有 Portal session，backend 会 redirect 到 frontend popup 页面：
