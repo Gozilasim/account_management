@@ -1,6 +1,6 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-11 01:17
-# Description: SQLAlchemy ORM models for Portal accounts, MFA, sessions, and OIDC.
+# Updated at: 2026-05-12 00:31
+# Description: SQLAlchemy ORM models for Portal accounts, profile data, sessions, audit events, MFA, and OIDC.
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from __future__ import annotations
 # ###############################################
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -49,8 +49,19 @@ class User(Base, TimestampMixin):
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    first_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    phone_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    phone_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    gender: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    gender_custom: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
+    locale: Mapped[str | None] = mapped_column(String(35), nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     avatar_public_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    profile_onboarding_skipped_fields: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    profile_onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     mfa_enrolled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -69,8 +80,27 @@ class SessionToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    login_ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    last_seen_ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    device_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class SecurityEvent(Base):
+    __tablename__ = "security_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    device_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    user: Mapped[User] = relationship()
 
 
 class AuthChallenge(Base):

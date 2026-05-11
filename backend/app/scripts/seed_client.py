@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-11 01:17
+# Updated at: 2026-05-12 00:31
 # Description: CLI helper to create or update OIDC clients.
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ def main() -> None:
     parser.add_argument("--client-id", required=True)
     parser.add_argument("--name", required=True)
     parser.add_argument("--redirect-uri", action="append", required=True)
-    parser.add_argument("--scope", action="append", default=["openid", "email", "profile"])
+    parser.add_argument("--scope", action="append", default=["openid", "email", "profile", "phone"])
     parser.add_argument("--public", action="store_true", help="Create a public PKCE client without client_secret.")
     args = parser.parse_args()
 
