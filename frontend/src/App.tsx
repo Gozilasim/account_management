@@ -1,6 +1,6 @@
 /*
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-12 02:44
+Updated at: 2026-05-13 03:02
 Description: Main GozilaSim ID React UI for authentication, profile, and sign-in protection screens.
 */
 
@@ -31,7 +31,18 @@ import type {
 
 const PRODUCT_NAME = "GozilaSim ID";
 const FALLBACK_INITIALS = "GS";
-const WALLPAPER_VIDEO_SRC = import.meta.env.VITE_PORTAL_WALLPAPER_SRC as string | undefined;
+const THEME_STORAGE_KEY = "gozilasim.theme.v1";
+const LOGIN_BACKGROUND_STORAGE_KEY = "gozilasim.loginBackground.v1";
+const DEFAULT_LOGIN_BACKGROUND_SRC = "/backgrounds/26011-353916142_medium.mp4";
+const LOGIN_BACKGROUND_OPTIONS: Array<{ id: string; src: string }> = [
+  { id: "background-default", src: DEFAULT_LOGIN_BACKGROUND_SRC },
+  { id: "background-131997", src: "/backgrounds/131997-751915329_medium.mp4" },
+  { id: "background-153957", src: "/backgrounds/153957-806571952_medium.mp4" },
+  { id: "background-20072", src: "/backgrounds/20072-307163785_medium.mp4" },
+  { id: "background-202587", src: "/backgrounds/202587-918431513_medium.mp4" },
+  { id: "background-35573", src: "/backgrounds/35573-407595474_medium.mp4" },
+  { id: "background-5194", src: "/backgrounds/5194-183786499_medium.mp4" }
+];
 
 const GENDER_OPTIONS: Array<{ value: GenderValue; label: string }> = [
   { value: "male", label: "Male" },
@@ -49,6 +60,9 @@ type Route = "login" | "register" | "forgot-password" | "reset-password" | "prof
 type ConsoleRoute = Extract<Route, "account" | "profile" | "security">;
 type AuthenticatedHandler = (user: User, options?: { showOnboarding?: boolean }) => void;
 type ProfileEditField = "name" | "gender" | "phone" | "birthday" | "language" | "timezone" | "picture";
+type SecuritySection = "activity" | "password" | "verification" | "sessions";
+type ThemeField = "background" | "surface" | "surfaceMuted" | "text" | "mutedText" | "accent";
+type ThemeSettings = Record<ThemeField, string>;
 
 const CONSOLE_NAV: Array<{
   route: ConsoleRoute;
@@ -62,6 +76,25 @@ const CONSOLE_NAV: Array<{
 ];
 
 const PROFILE_EDIT_FIELDS: ProfileEditField[] = ["name", "gender", "phone", "birthday", "language", "timezone", "picture"];
+const SECURITY_SECTIONS: SecuritySection[] = ["activity", "password", "verification", "sessions"];
+
+const DEFAULT_THEME: ThemeSettings = {
+  background: "#202124",
+  surface: "#303134",
+  surfaceMuted: "#3c4043",
+  text: "#f1f3f4",
+  mutedText: "#bdc1c6",
+  accent: "#8ab4f8"
+};
+
+const THEME_FIELDS: Array<{ key: ThemeField; label: string; description: string }> = [
+  { key: "background", label: "Background", description: "Page and shell background" },
+  { key: "surface", label: "Surface", description: "Panels, menus, and forms" },
+  { key: "surfaceMuted", label: "Row surface", description: "Rows, secondary cards, and hover bases" },
+  { key: "text", label: "Text", description: "Primary readable text" },
+  { key: "mutedText", label: "Muted text", description: "Descriptions and helper text" },
+  { key: "accent", label: "Accent", description: "Buttons, focus, and selected states" }
+];
 
 function getRoute(): Route {
   const path = window.location.pathname.replace(/^\/+/, "");
@@ -81,11 +114,19 @@ function getRoute(): Route {
 
 function go(path: Route) {
   window.history.pushState({}, "", `/${path}`);
+  window.scrollTo({ top: 0, left: 0 });
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
 function goProfileEdit(field: ProfileEditField) {
   window.history.pushState({}, "", `/profile-edit?field=${field}`);
+  window.scrollTo({ top: 0, left: 0 });
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+function goSecuritySection(section: SecuritySection) {
+  window.history.pushState({}, "", `/security?section=${section}`);
+  window.scrollTo({ top: 0, left: 0 });
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
@@ -100,6 +141,11 @@ function resetToken() {
 function profileEditField(): ProfileEditField {
   const field = new URLSearchParams(window.location.search).get("field");
   return PROFILE_EDIT_FIELDS.includes(field as ProfileEditField) ? field as ProfileEditField : "name";
+}
+
+function securitySectionFromUrl(): SecuritySection | null {
+  const section = new URLSearchParams(window.location.search).get("section");
+  return SECURITY_SECTIONS.includes(section as SecuritySection) ? section as SecuritySection : null;
 }
 
 function profileEditTitle(field: ProfileEditField) {
@@ -219,6 +265,115 @@ function latestSecurityEvent(events: SecurityEvent[]) {
   if (events.length === 0) return "No recent security activity";
   const event = events[0];
   return `${humanize(event.event_type)} · ${formatDateTime(event.created_at)}`;
+}
+
+// ###############################################
+// Theme Helpers
+// ###############################################
+
+function isHexColor(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+function normalizeTheme(value: unknown): ThemeSettings {
+  if (!value || typeof value !== "object") return DEFAULT_THEME;
+  const record = value as Partial<Record<ThemeField, unknown>>;
+  return {
+    background: isHexColor(record.background) ? record.background : DEFAULT_THEME.background,
+    surface: isHexColor(record.surface) ? record.surface : DEFAULT_THEME.surface,
+    surfaceMuted: isHexColor(record.surfaceMuted) ? record.surfaceMuted : DEFAULT_THEME.surfaceMuted,
+    text: isHexColor(record.text) ? record.text : DEFAULT_THEME.text,
+    mutedText: isHexColor(record.mutedText) ? record.mutedText : DEFAULT_THEME.mutedText,
+    accent: isHexColor(record.accent) ? record.accent : DEFAULT_THEME.accent
+  };
+}
+
+function loadThemeSettings(): ThemeSettings {
+  try {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return stored ? normalizeTheme(JSON.parse(stored)) : DEFAULT_THEME;
+  } catch {
+    return DEFAULT_THEME;
+  }
+}
+
+function saveThemeSettings(theme: ThemeSettings) {
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(theme));
+  } catch {
+    // Theme storage is best-effort and should never block account usage.
+  }
+}
+
+// ###############################################
+// Login Background Helpers
+// ###############################################
+
+function isLoginBackgroundSrc(value: unknown): value is string {
+  return typeof value === "string" && LOGIN_BACKGROUND_OPTIONS.some((option) => option.src === value);
+}
+
+function loadLoginBackgroundSrc() {
+  try {
+    const stored = window.localStorage.getItem(LOGIN_BACKGROUND_STORAGE_KEY);
+    return isLoginBackgroundSrc(stored) ? stored : DEFAULT_LOGIN_BACKGROUND_SRC;
+  } catch {
+    return DEFAULT_LOGIN_BACKGROUND_SRC;
+  }
+}
+
+function saveLoginBackgroundSrc(src: string) {
+  if (!isLoginBackgroundSrc(src)) return;
+  try {
+    window.localStorage.setItem(LOGIN_BACKGROUND_STORAGE_KEY, src);
+  } catch {
+    // Background selection is browser-local and best-effort.
+  }
+}
+
+// ###############################################
+// Theme Color Helpers
+// ###############################################
+
+function hexToRgb(hex: string) {
+  const value = hex.replace("#", "");
+  return {
+    r: parseInt(value.slice(0, 2), 16),
+    g: parseInt(value.slice(2, 4), 16),
+    b: parseInt(value.slice(4, 6), 16)
+  };
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const { r, g, b } = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function relativeLuminance(hex: string) {
+  const { r, g, b } = hexToRgb(hex);
+  const convert = (channel: number) => {
+    const value = channel / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * convert(r) + 0.7152 * convert(g) + 0.0722 * convert(b);
+}
+
+function accentContrast(hex: string) {
+  return relativeLuminance(hex) > 0.52 ? "#172033" : "#ffffff";
+}
+
+function applyThemeSettings(theme: ThemeSettings) {
+  const root = document.documentElement;
+  root.style.setProperty("--theme-bg", theme.background);
+  root.style.setProperty("--theme-surface", theme.surface);
+  root.style.setProperty("--theme-surface-muted", theme.surfaceMuted);
+  root.style.setProperty("--theme-text", theme.text);
+  root.style.setProperty("--theme-muted", theme.mutedText);
+  root.style.setProperty("--theme-accent", theme.accent);
+  root.style.setProperty("--theme-accent-contrast", accentContrast(theme.accent));
+  root.style.setProperty("--theme-accent-soft", hexToRgba(theme.accent, 0.16));
+  root.style.setProperty("--theme-accent-focus", hexToRgba(theme.accent, 0.28));
+  root.style.setProperty("--theme-border", theme.surfaceMuted);
 }
 
 // ###############################################
@@ -354,12 +509,12 @@ function LogoMark() {
   );
 }
 
-function AuthWallpaper() {
+function AuthWallpaper({ videoSrc }: { videoSrc: string }) {
   return (
     <div className="auth-wallpaper" aria-hidden="true">
-      {WALLPAPER_VIDEO_SRC && (
-        <video className="auth-wallpaper-video" autoPlay muted loop playsInline>
-          <source src={WALLPAPER_VIDEO_SRC} type="video/mp4" />
+      {videoSrc && (
+        <video key={videoSrc} className="auth-wallpaper-video" autoPlay muted loop playsInline>
+          <source src={videoSrc} type="video/mp4" />
         </video>
       )}
       <div className="auth-wallpaper-gradient" />
@@ -411,6 +566,17 @@ function PencilIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="m5 19 4.1-1 9.4-9.4a2.1 2.1 0 0 0-3-3L6.1 15 5 19Z" />
       <path d="m14.7 6.3 3 3" />
+    </svg>
+  );
+}
+
+function ThemeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 4a8 8 0 0 0 0 16h1.1a1.7 1.7 0 0 0 1.2-2.9l-.4-.4a1.7 1.7 0 0 1 1.2-2.9H16a4 4 0 0 0 0-8 9.4 9.4 0 0 0-4-1.8Z" />
+      <circle cx="7.8" cy="11" r="1" />
+      <circle cx="10.2" cy="7.8" r="1" />
+      <circle cx="14.2" cy="8.1" r="1" />
     </svg>
   );
 }
@@ -926,6 +1092,11 @@ function Shell({
 
       <div className="console-shell">
         <header className="console-topbar">
+          <button className="mobile-topbar-brand brand" onClick={() => navigateConsole("account")}>
+            <LogoMark />
+            <span>{PRODUCT_NAME}</span>
+          </button>
+
           <form className="topbar-search" onSubmit={submitTopbarSearch}>
             <SearchIcon />
             <input
@@ -1154,10 +1325,10 @@ function Avatar({ user }: { user: User | null }) {
   return <div className="avatar avatar-fallback">{userInitials(user)}</div>;
 }
 
-function AuthLayout({ children }: { children: ReactNode }) {
+function AuthLayout({ children, backgroundSrc }: { children: ReactNode; backgroundSrc: string }) {
   return (
     <main className="auth-page">
-      <AuthWallpaper />
+      <AuthWallpaper videoSrc={backgroundSrc} />
       <header className="auth-header">
         <AuthBrand />
       </header>
@@ -1186,10 +1357,10 @@ function AuthLayout({ children }: { children: ReactNode }) {
   );
 }
 
-function StandaloneAccessState({ loading }: { loading: boolean }) {
+function StandaloneAccessState({ loading, backgroundSrc }: { loading: boolean; backgroundSrc: string }) {
   return (
     <main className="auth-page auth-state-page">
-      <AuthWallpaper />
+      <AuthWallpaper videoSrc={backgroundSrc} />
       <header className="auth-header">
         <AuthBrand />
       </header>
@@ -1212,11 +1383,197 @@ function StandaloneAccessState({ loading }: { loading: boolean }) {
   );
 }
 
+function BackgroundPickerModal({
+  selectedSrc,
+  onSelect,
+  onReset,
+  onClose
+}: {
+  selectedSrc: string;
+  onSelect: (src: string) => void;
+  onReset: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div
+      className="background-picker-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Login background picker"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section className="background-picker-card">
+        <header className="background-picker-header">
+          <div>
+            <h2>Login background</h2>
+            <p>Saved on this browser only.</p>
+          </div>
+          <button type="button" className="theme-close" aria-label="Close background picker" onClick={onClose}>
+            <CloseIcon />
+          </button>
+        </header>
+
+        <div className="background-picker-grid">
+          {LOGIN_BACKGROUND_OPTIONS.map((option, index) => {
+            const selected = option.src === selectedSrc;
+            return (
+              <button
+                type="button"
+                key={option.id}
+                className={`background-choice${selected ? " background-choice-selected" : ""}`}
+                aria-label={`Background option ${index + 1}`}
+                aria-pressed={selected}
+                onClick={() => onSelect(option.src)}
+              >
+                <video src={option.src} autoPlay muted loop playsInline preload="metadata" />
+                {selected && (
+                  <span className="background-choice-check" aria-hidden="true">
+                    <SettingIcon name="check" />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="background-picker-actions">
+          <button type="button" className="secondary" onClick={onReset}>
+            Reset
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ThemeCustomizer({
+  theme,
+  onThemeChange,
+  onReset,
+  loginBackgroundSrc,
+  onLoginBackgroundChange,
+  onLoginBackgroundReset
+}: {
+  theme: ThemeSettings;
+  onThemeChange: (theme: ThemeSettings) => void;
+  onReset: () => void;
+  loginBackgroundSrc: string;
+  onLoginBackgroundChange: (src: string) => void;
+  onLoginBackgroundReset: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
+  const customizerRef = useRef<HTMLDivElement>(null);
+  const panelPresence = useMotionPresence(open, MOTION_FAST_MS);
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+
+    function closeOnOutsideClick(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (customizerRef.current && !customizerRef.current.contains(target)) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+    };
+  }, []);
+
+  const updateColor = (field: ThemeField, color: string) => {
+    if (!isHexColor(color)) return;
+    onThemeChange({
+      ...theme,
+      [field]: color
+    });
+  };
+
+  return (
+    <div className="theme-customizer" ref={customizerRef}>
+      {panelPresence.mounted && (
+        <section className="theme-panel" aria-label="Customize theme" data-state={panelPresence.state}>
+          <div className="theme-panel-header">
+            <div>
+              <h2>Customize theme</h2>
+              <p>Saved on this browser only.</p>
+            </div>
+            <button type="button" className="theme-close" aria-label="Close theme customizer" onClick={() => setOpen(false)}>
+              <CloseIcon />
+            </button>
+          </div>
+
+          <div className="theme-color-list">
+            {THEME_FIELDS.map((field) => (
+              <label className="theme-color-row" key={field.key}>
+                <span>
+                  <strong>{field.label}</strong>
+                  <small>{field.description}</small>
+                </span>
+                <input
+                  type="color"
+                  value={theme[field.key]}
+                  aria-label={`${field.label} color`}
+                  onChange={(event) => updateColor(field.key, event.target.value)}
+                />
+                <code>{theme[field.key]}</code>
+              </label>
+            ))}
+          </div>
+
+          <div className="theme-actions">
+            <button type="button" className="secondary" onClick={() => setBackgroundPickerOpen(true)}>
+              Login background
+            </button>
+            <button type="button" className="secondary" onClick={onReset}>
+              Reset theme
+            </button>
+          </div>
+        </section>
+      )}
+      {backgroundPickerOpen && (
+        <BackgroundPickerModal
+          selectedSrc={loginBackgroundSrc}
+          onSelect={onLoginBackgroundChange}
+          onReset={onLoginBackgroundReset}
+          onClose={() => setBackgroundPickerOpen(false)}
+        />
+      )}
+      <button
+        type="button"
+        className="theme-fab"
+        aria-label="Customize theme"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <ThemeIcon />
+      </button>
+    </div>
+  );
+}
+
 // ###############################################
 // Authentication Screens
 // ###############################################
 
-function RegisterPage({ onAuthenticated }: { onAuthenticated: AuthenticatedHandler }) {
+function RegisterPage({ onAuthenticated, backgroundSrc }: { onAuthenticated: AuthenticatedHandler; backgroundSrc: string }) {
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
@@ -1239,7 +1596,7 @@ function RegisterPage({ onAuthenticated }: { onAuthenticated: AuthenticatedHandl
   }
 
   return (
-    <AuthLayout>
+    <AuthLayout backgroundSrc={backgroundSrc}>
       {setup ? (
         <MfaSetupPanel setup={setup} onAuthenticated={(user) => onAuthenticated(user, { showOnboarding: true })} />
       ) : (
@@ -1266,7 +1623,7 @@ function RegisterPage({ onAuthenticated }: { onAuthenticated: AuthenticatedHandl
   );
 }
 
-function LoginPage({ onAuthenticated }: { onAuthenticated: AuthenticatedHandler }) {
+function LoginPage({ onAuthenticated, backgroundSrc }: { onAuthenticated: AuthenticatedHandler; backgroundSrc: string }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mfaChallenge, setMfaChallenge] = useState<string | null>(null);
@@ -1302,7 +1659,7 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: AuthenticatedHandler 
   }
 
   return (
-    <AuthLayout>
+    <AuthLayout backgroundSrc={backgroundSrc}>
       {setup ? (
         <MfaSetupPanel setup={setup} onAuthenticated={onAuthenticated} />
       ) : mfaChallenge ? (
@@ -1337,13 +1694,16 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: AuthenticatedHandler 
 
 function OAuthAuthorizeLayout({
   context,
-  children
+  children,
+  backgroundSrc
 }: {
   context: AuthorizeContext | null;
   children: ReactNode;
+  backgroundSrc: string;
 }) {
   return (
     <main className="oauth-page">
+      <AuthWallpaper videoSrc={backgroundSrc} />
       <section className="oauth-card">
         <header className="oauth-header">
           <div className="oauth-brand">
@@ -1371,11 +1731,13 @@ function OAuthAuthorizeLayout({
 function OAuthAuthorizePage({
   user,
   loading,
-  onAuthenticated
+  onAuthenticated,
+  backgroundSrc
 }: {
   user: User | null;
   loading: boolean;
   onAuthenticated: AuthenticatedHandler;
+  backgroundSrc: string;
 }) {
   const next = nextUrl();
   const authorizeRequest = useMemo(() => parseAuthorizeRequest(next), [next]);
@@ -1463,7 +1825,7 @@ function OAuthAuthorizePage({
   }
 
   return (
-    <OAuthAuthorizeLayout context={context}>
+    <OAuthAuthorizeLayout context={context} backgroundSrc={backgroundSrc}>
       <Alert message={contextError} />
       {!context && !contextError && <Alert message="Loading sign-in request..." tone="info" />}
       {loading ? (
@@ -1530,7 +1892,7 @@ function OAuthAuthorizePage({
   );
 }
 
-function ForgotPasswordPage() {
+function ForgotPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
   const [email, setEmail] = useState("");
   const [resetLink, setResetLink] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -1555,7 +1917,7 @@ function ForgotPasswordPage() {
   }
 
   return (
-    <AuthLayout>
+    <AuthLayout backgroundSrc={backgroundSrc}>
       <div className="panel-header">
         <h2>Reset password</h2>
         <p>Enter your email and continue with the reset link.</p>
@@ -1583,7 +1945,7 @@ function ForgotPasswordPage() {
   );
 }
 
-function ResetPasswordPage() {
+function ResetPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
   const token = resetToken();
   const [inspect, setInspect] = useState<ResetPasswordInspectResponse | null>(null);
   const [loadingInspect, setLoadingInspect] = useState(true);
@@ -1646,7 +2008,7 @@ function ResetPasswordPage() {
   }
 
   return (
-    <AuthLayout>
+    <AuthLayout backgroundSrc={backgroundSrc}>
       <div className="panel-header">
         <h2>Choose a new password</h2>
         <p>Enter and confirm a new password for your {PRODUCT_NAME} account.</p>
@@ -1809,11 +2171,13 @@ function onboardingCopy(field: ProfilePromptField) {
 function ProfileOnboardingPage({
   user,
   setUser,
-  onFinished
+  onFinished,
+  backgroundSrc
 }: {
   user: User;
   setUser: (user: User) => void;
   onFinished: () => void;
+  backgroundSrc: string;
 }) {
   const field = user.profile_completion.next_prompt_field;
   const [value, setValue] = useState("");
@@ -1909,7 +2273,7 @@ function ProfileOnboardingPage({
 
   if (!field) {
     return (
-      <AuthLayout>
+      <AuthLayout backgroundSrc={backgroundSrc}>
         <div className="panel-header">
           <h2>Profile setup is ready</h2>
           <p>Your profile steps are complete. Continue to your account.</p>
@@ -1925,7 +2289,7 @@ function ProfileOnboardingPage({
   const copy = onboardingCopy(field);
 
   return (
-    <AuthLayout>
+    <AuthLayout backgroundSrc={backgroundSrc}>
       <div className="panel-header">
         <h2>{copy.title}</h2>
         <p>{copy.helper}</p>
@@ -1983,6 +2347,56 @@ function AccountHomePage({ user, setUser }: { user: User; setUser: (user: User) 
   const [query, setQuery] = useState("");
   const [pictureModalOpen, setPictureModalOpen] = useState(false);
   const pictureModalPresence = useMotionPresence(pictureModalOpen, MOTION_BASE_MS);
+  const accountActions: Array<{
+    title: string;
+    description: string;
+    icon: Parameters<typeof SettingIcon>[0]["name"];
+    tone: "green" | "cyan" | "blue";
+    onClick: () => void;
+  }> = [
+    {
+      title: "Personal info",
+      description: "Name, email, phone, birthday, language",
+      icon: "id",
+      tone: "green",
+      onClick: () => go("profile")
+    },
+    {
+      title: "Security and sign-in",
+      description: "Password, active sessions, verification",
+      icon: "shield",
+      tone: "cyan",
+      onClick: () => go("security")
+    },
+    {
+      title: "Password",
+      description: "Change your account password",
+      icon: "key",
+      tone: "cyan",
+      onClick: () => goSecuritySection("password")
+    },
+    {
+      title: "Active sessions",
+      description: "Review devices signed in to your account",
+      icon: "devices",
+      tone: "cyan",
+      onClick: () => goSecuritySection("sessions")
+    },
+    {
+      title: "Extra verification",
+      description: user.mfa_enabled ? "Verification code is required at sign-in" : "Add another check when signing in",
+      icon: "shield",
+      tone: "blue",
+      onClick: () => goSecuritySection("verification")
+    },
+    {
+      title: "Security activity",
+      description: "Recent security activity and account alerts",
+      icon: "activity",
+      tone: "blue",
+      onClick: () => goSecuritySection("activity")
+    }
+  ];
 
   function search(event: FormEvent) {
     event.preventDefault();
@@ -1998,8 +2412,10 @@ function AccountHomePage({ user, setUser }: { user: User; setUser: (user: User) 
             <CameraIcon />
           </span>
         </button>
-        <h1>{user.display_name}</h1>
-        <p>{user.email}</p>
+        <div className="home-identity-copy">
+          <h1>{user.display_name}</h1>
+          <p>{user.email}</p>
+        </div>
       </div>
 
       <form className="home-search" onSubmit={search}>
@@ -2022,6 +2438,20 @@ function AccountHomePage({ user, setUser }: { user: User; setUser: (user: User) 
       <p className="home-privacy-note">
         Only you can see your settings. Review your profile details, password, devices, and sign-in protection from this account center.
       </p>
+
+      <div className="home-account-actions" aria-label="Account settings">
+        {accountActions.map((action) => (
+          <button key={action.title} className="home-account-action" onClick={action.onClick}>
+            <span className={`home-account-action-icon home-account-action-icon-${action.tone}`}>
+              <SettingIcon name={action.icon} />
+            </span>
+            <span>
+              <strong>{action.title}</strong>
+              <span>{action.description}</span>
+            </span>
+          </button>
+        ))}
+      </div>
 
       {pictureModalPresence.mounted && (
         <div
@@ -2248,7 +2678,7 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
   const [securityLoading, setSecurityLoading] = useState(true);
   const [securityError, setSecurityError] = useState<string | null>(null);
   const [securityAction, setSecurityAction] = useState<string | null>(null);
-  const [expandedSection, setExpandedSection] = useState<"activity" | "password" | "verification" | "sessions" | null>(null);
+  const [expandedSection, setExpandedSection] = useState<SecuritySection | null>(() => securitySectionFromUrl());
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -2273,6 +2703,16 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
   useEffect(() => {
     refreshSecurityData();
   }, [refreshSecurityData]);
+
+  useEffect(() => {
+    function syncSectionFromUrl() {
+      setExpandedSection(securitySectionFromUrl());
+    }
+
+    syncSectionFromUrl();
+    window.addEventListener("popstate", syncSectionFromUrl);
+    return () => window.removeEventListener("popstate", syncSectionFromUrl);
+  }, []);
 
   async function changePassword(event: FormEvent) {
     event.preventDefault();
@@ -2522,6 +2962,8 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
 export default function App() {
   const [route, setRoute] = useState<Route>(getRoute());
   const [pendingRedirect, setPendingRedirect] = useState<string | null>(null);
+  const [theme, setTheme] = useState<ThemeSettings>(loadThemeSettings);
+  const [loginBackgroundSrc, setLoginBackgroundSrc] = useState(loadLoginBackgroundSrc);
   const { user, setUser, loading } = useSession();
 
   useEffect(() => {
@@ -2529,6 +2971,46 @@ export default function App() {
     window.addEventListener("popstate", updateRoute);
     return () => window.removeEventListener("popstate", updateRoute);
   }, []);
+
+  useEffect(() => {
+    applyThemeSettings(theme);
+  }, [theme]);
+
+  const updateTheme = useCallback((nextTheme: ThemeSettings) => {
+    const normalized = normalizeTheme(nextTheme);
+    setTheme(normalized);
+    saveThemeSettings(normalized);
+  }, []);
+
+  const resetTheme = useCallback(() => {
+    setTheme(DEFAULT_THEME);
+    saveThemeSettings(DEFAULT_THEME);
+  }, []);
+
+  const updateLoginBackground = useCallback((src: string) => {
+    if (!isLoginBackgroundSrc(src)) return;
+    setLoginBackgroundSrc(src);
+    saveLoginBackgroundSrc(src);
+  }, []);
+
+  const resetLoginBackground = useCallback(() => {
+    setLoginBackgroundSrc(DEFAULT_LOGIN_BACKGROUND_SRC);
+    saveLoginBackgroundSrc(DEFAULT_LOGIN_BACKGROUND_SRC);
+  }, []);
+
+  const withThemeCustomizer = useCallback((content: ReactNode) => (
+    <>
+      {content}
+      <ThemeCustomizer
+        theme={theme}
+        onThemeChange={updateTheme}
+        onReset={resetTheme}
+        loginBackgroundSrc={loginBackgroundSrc}
+        onLoginBackgroundChange={updateLoginBackground}
+        onLoginBackgroundReset={resetLoginBackground}
+      />
+    </>
+  ), [loginBackgroundSrc, resetLoginBackground, resetTheme, theme, updateLoginBackground, updateTheme]);
 
   const finishOnboarding = useCallback(() => {
     if (pendingRedirect) {
@@ -2569,28 +3051,34 @@ export default function App() {
     return null;
   }, [route, setUser, user]);
 
-  if (route === "register") return <RegisterPage onAuthenticated={onAuthenticated} />;
-  if (route === "login") return <LoginPage onAuthenticated={onAuthenticated} />;
-  if (route === "authorize") return <OAuthAuthorizePage user={user} loading={loading} onAuthenticated={onAuthenticated} />;
-  if (route === "forgot-password") return <ForgotPasswordPage />;
-  if (route === "reset-password") return <ResetPasswordPage />;
-  if (route === "profile-onboarding" && user) {
-    return <ProfileOnboardingPage user={user} setUser={setUser} onFinished={finishOnboarding} />;
+  if (route === "register") return withThemeCustomizer(<RegisterPage onAuthenticated={onAuthenticated} backgroundSrc={loginBackgroundSrc} />);
+  if (route === "login") return withThemeCustomizer(<LoginPage onAuthenticated={onAuthenticated} backgroundSrc={loginBackgroundSrc} />);
+  if (route === "authorize") {
+    return withThemeCustomizer(
+      <OAuthAuthorizePage user={user} loading={loading} onAuthenticated={onAuthenticated} backgroundSrc={loginBackgroundSrc} />
+    );
   }
-  if (loading || !user) return <StandaloneAccessState loading={loading} />;
+  if (route === "forgot-password") return withThemeCustomizer(<ForgotPasswordPage backgroundSrc={loginBackgroundSrc} />);
+  if (route === "reset-password") return withThemeCustomizer(<ResetPasswordPage backgroundSrc={loginBackgroundSrc} />);
+  if (route === "profile-onboarding" && user) {
+    return withThemeCustomizer(
+      <ProfileOnboardingPage user={user} setUser={setUser} onFinished={finishOnboarding} backgroundSrc={loginBackgroundSrc} />
+    );
+  }
+  if (loading || !user) return withThemeCustomizer(<StandaloneAccessState loading={loading} backgroundSrc={loginBackgroundSrc} />);
   if (route === "profile-edit") {
     const field = profileEditField();
-    return (
+    return withThemeCustomizer(
       <ProfileEditDetailShell user={user} setUser={setUser} title={profileEditTitle(field)} onLogout={onLogout}>
         <ProfileEditPage user={user} setUser={setUser} field={field} />
       </ProfileEditDetailShell>
     );
   }
-  if (!protectedPage) return <StandaloneAccessState loading={loading} />;
+  if (!protectedPage) return withThemeCustomizer(<StandaloneAccessState loading={loading} backgroundSrc={loginBackgroundSrc} />);
 
   const activeConsoleRoute = route as ConsoleRoute;
 
-  return (
+  return withThemeCustomizer(
     <Shell user={user} setUser={setUser} route={activeConsoleRoute} onLogout={onLogout}>
       {protectedPage}
     </Shell>
