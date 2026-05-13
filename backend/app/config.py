@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-11 01:42
+# Updated at: 2026-05-12 02:42
 # Description: Application settings loaded from environment variables.
 
 from __future__ import annotations
@@ -44,9 +44,12 @@ class Settings(BaseSettings):
     session_cookie_name: str = "portal_session"
     session_cookie_secure: bool = False
     session_ttl_minutes: int = 60 * 24 * 7
+    trust_proxy_headers: bool = False
 
     mfa_issuer: str = "My Portal"
     password_min_length: int = 8
+    password_reset_delivery: str = "dev_log"
+    password_reset_token_ttl_minutes: int = 30
     avatar_max_bytes: int = 5 * 1024 * 1024
 
     cloudinary_cloud_name: str | None = None
@@ -58,6 +61,7 @@ class Settings(BaseSettings):
     oidc_key_id: str = "portal-dev-key"
     oidc_access_token_ttl_minutes: int = 60
     oidc_code_ttl_minutes: int = 5
+    oidc_clients_json: str = ""
 
     @model_validator(mode="after")
     def normalize_sqlite_database_url(self) -> "Settings":

@@ -1,0 +1,25 @@
+# Created at: 2026-05-13 22:53
+# Updated at: 2026-05-13 22:53
+# Description: Server Docker Compose configuration for the backend Portal service.
+
+# ###############################################
+# Services
+# ###############################################
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: account-management-backend-server
+    env_file:
+      - .env.server
+    ports:
+      - "8050:8050"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8050/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

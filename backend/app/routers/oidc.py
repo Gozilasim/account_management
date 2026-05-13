@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-11 01:17
+# Updated at: 2026-05-12 01:23
 # Description: Minimal OIDC provider endpoints for Login via Portal.
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_user_from_request
 from app.models import AccessToken, AuthorizationCode, OidcClient, User, utcnow
 from app.security import (
     add_query_params,
@@ -55,6 +55,16 @@ def validate_scopes(client: OidcClient, scope: str) -> str:
     return " ".join(requested)
 
 
+def authorize_context_payload(client: OidcClient, redirect_uri: str, normalized_scope: str) -> dict:
+    return {
+        "client_id": client.client_id,
+        "client_name": client.name,
+        "redirect_uri": redirect_uri,
+        "scope": normalized_scope,
+        "scopes": normalized_scope.split(),
+    }
+
+
 def oidc_claims(user: User, scope: str) -> dict:
     claims: dict[str, object] = {
         "sub": user.id,
@@ -67,6 +77,16 @@ def oidc_claims(user: User, scope: str) -> dict:
     if "profile" in scopes:
         claims["name"] = user.display_name
         claims["picture"] = user.avatar_url
+        claims["given_name"] = user.first_name
+        claims["family_name"] = user.last_name
+        claims["gender"] = user.gender_custom if user.gender == "custom" else user.gender
+        claims["birthdate"] = user.date_of_birth.isoformat() if user.date_of_birth else None
+        claims["locale"] = user.locale
+        claims["zoneinfo"] = user.timezone
+        claims["updated_at"] = epoch_seconds(user.updated_at)
+    if "phone" in scopes:
+        claims["phone_number"] = user.phone_number
+        claims["phone_number_verified"] = user.phone_verified
     return claims
 
 
@@ -93,8 +113,24 @@ def openid_configuration() -> dict:
         "grant_types_supported": ["authorization_code"],
         "subject_types_supported": ["public"],
         "id_token_signing_alg_values_supported": ["RS256"],
-        "scopes_supported": ["openid", "email", "profile"],
-        "claims_supported": ["sub", "email", "email_verified", "name", "picture", "mfa_enabled"],
+        "scopes_supported": ["openid", "email", "profile", "phone"],
+        "claims_supported": [
+            "sub",
+            "email",
+            "email_verified",
+            "name",
+            "picture",
+            "given_name",
+            "family_name",
+            "gender",
+            "birthdate",
+            "locale",
+            "zoneinfo",
+            "updated_at",
+            "phone_number",
+            "phone_number_verified",
+            "mfa_enabled",
+        ],
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
     }
@@ -103,6 +139,20 @@ def openid_configuration() -> dict:
 @router.get("/oauth/jwks.json")
 def jwks() -> dict:
     return {"keys": [public_jwk()]}
+
+
+@router.get("/oauth/authorize/context")
+def authorize_context(
+    client_id: str,
+    redirect_uri: str,
+    scope: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    client = client_by_id(db, client_id)
+    if redirect_uri not in client.redirect_uris:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid redirect_uri.")
+    normalized_scope = validate_scopes(client, scope)
+    return authorize_context_payload(client, redirect_uri, normalized_scope)
 
 
 # ###############################################
@@ -133,10 +183,10 @@ def authorize(
     normalized_scope = validate_scopes(client, scope)
 
     try:
-        user = get_current_user(request, db)
+        user = get_user_from_request(request, db)
     except HTTPException:
         next_url = quote(str(request.url), safe="")
-        return RedirectResponse(f"{settings.frontend_origin}/login?next={next_url}", status_code=status.HTTP_302_FOUND)
+        return RedirectResponse(f"{settings.frontend_origin}/authorize?next={next_url}", status_code=status.HTTP_302_FOUND)
 
     code = secrets.token_urlsafe(32)
     auth_code = AuthorizationCode(

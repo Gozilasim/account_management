@@ -1,14 +1,26 @@
 /*
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-11 01:17
-Description: Frontend API client for Portal backend endpoints.
+Updated at: 2026-05-13 23:34
+Description: Frontend API client for GozilaSim ID backend endpoints.
 */
 
 // ###############################################
 // Imports
 // ###############################################
 
-import type { LoginResponse, MfaSetup, User } from "./types";
+import type {
+  AuthorizeContext,
+  AvatarHistoryItem,
+  ForgotPasswordResponse,
+  LoginResponse,
+  MfaSetup,
+  ProfilePromptField,
+  ProfileUpdatePayload,
+  ResetPasswordInspectResponse,
+  SecurityEvent,
+  SessionInfo,
+  User
+} from "./types";
 
 // ###############################################
 // Client Setup
@@ -57,7 +69,16 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     let message = "Request failed.";
     try {
       const payload = await response.json();
-      message = payload.detail ?? message;
+      if (typeof payload.detail === "string") {
+        message = payload.detail;
+      } else if (Array.isArray(payload.detail)) {
+        message = payload.detail
+          .map((item: { msg?: string }) => item.msg)
+          .filter(Boolean)
+          .join(" ") || message;
+      } else if (payload.detail) {
+        message = JSON.stringify(payload.detail);
+      }
     } catch {
       message = response.statusText || message;
     }
@@ -77,6 +98,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
 export const api = {
   me: () => request<User>("/api/auth/me"),
+  authorizeContext: (payload: { client_id: string; redirect_uri: string; scope: string }) => {
+    const params = new URLSearchParams(payload);
+    return request<AuthorizeContext>(`/oauth/authorize/context?${params.toString()}`);
+  },
   register: (payload: { email: string; password: string; display_name: string }) =>
     request<{ mfa_setup_required: boolean; mfa_setup: MfaSetup; user: User }>("/api/auth/register", {
       method: "POST",
@@ -93,12 +118,33 @@ export const api = {
     request<User>("/api/auth/mfa/disable", { method: "POST", body: payload }),
   changePassword: (payload: { current_password: string; new_password: string }) =>
     request<{ message: string }>("/api/auth/password/change", { method: "POST", body: payload }),
-  updateProfile: (payload: { display_name: string }) =>
+  forgotPassword: (payload: { email: string }) =>
+    request<ForgotPasswordResponse>("/api/auth/password/forgot", { method: "POST", body: payload }),
+  inspectPasswordReset: (payload: { token: string }) =>
+    request<ResetPasswordInspectResponse>("/api/auth/password/reset/inspect", { method: "POST", body: payload }),
+  completePasswordReset: (payload: { token: string; new_password: string; mfa_code?: string }) =>
+    request<{ message: string }>("/api/auth/password/reset/complete", { method: "POST", body: payload }),
+  updateProfile: (payload: ProfileUpdatePayload) =>
     request<User>("/api/profile", { method: "PATCH", body: payload }),
+  skipProfileOnboarding: (field: ProfilePromptField) =>
+    request<User>("/api/profile/onboarding/skip", { method: "POST", body: { field } }),
+  completeProfileOnboarding: () =>
+    request<User>("/api/profile/onboarding/complete", { method: "POST" }),
   uploadAvatar: (file: File) => {
     const formData = new FormData();
     formData.set("avatar", file);
     return request<User>("/api/profile/avatar", { method: "POST", formData });
   },
+  listAvatarHistory: () => request<AvatarHistoryItem[]>("/api/profile/avatar/history"),
+  restoreAvatar: (publicId: string) =>
+    request<User>("/api/profile/avatar/restore", { method: "POST", body: { public_id: publicId } }),
+  deleteAvatarHistoryItem: (publicId: string) =>
+    request<{ message: string }>(`/api/profile/avatar/history/${encodeURIComponent(publicId)}`, { method: "DELETE" }),
+  listSessions: () => request<SessionInfo[]>("/api/auth/sessions"),
+  revokeSession: (sessionId: string) =>
+    request<{ message: string }>(`/api/auth/sessions/${sessionId}`, { method: "DELETE" }),
+  logoutOtherSessions: () =>
+    request<{ message: string }>("/api/auth/sessions/logout-others", { method: "POST" }),
+  listSecurityEvents: () => request<SecurityEvent[]>("/api/auth/security-events"),
   logout: () => request<{ message: string }>("/api/auth/sessions/logout", { method: "POST" })
 };

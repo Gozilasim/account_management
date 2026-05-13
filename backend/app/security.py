@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-11 01:17
+# Updated at: 2026-05-12 00:31
 # Description: Password hashing, token helpers, PKCE, TOTP, QR, and OIDC signing utilities.
 
 from __future__ import annotations
@@ -55,10 +55,26 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def create_session(db: Session, user: User) -> str:
+def create_session(
+    db: Session,
+    user: User,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+    device_label: str | None = None,
+) -> str:
     raw_token = random_token()
     expires_at = utcnow() + timedelta(minutes=settings.session_ttl_minutes)
-    db.add(SessionToken(user_id=user.id, token_hash=hash_token(raw_token), expires_at=expires_at))
+    db.add(
+        SessionToken(
+            user_id=user.id,
+            token_hash=hash_token(raw_token),
+            expires_at=expires_at,
+            login_ip_address=ip_address,
+            last_seen_ip_address=ip_address,
+            user_agent=user_agent,
+            device_label=device_label,
+        )
+    )
     return raw_token
 
 
