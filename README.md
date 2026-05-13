@@ -1,27 +1,27 @@
 <!--
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-12 02:42
+Updated at: 2026-05-14 00:11
 Description: Setup and usage guide for the unified account Portal.
 -->
 
 # Account Management Portal
 
-统一账号 Portal 第一版：用户只注册一次，之后其他 project 可以通过 `Login via Portal` 使用同一个账号登录。
+Version 1 of the unified account portal: users register once, then other projects can sign in with the same account through `Login via Portal`.
 
-## 目录
+## Directory
 
-- `backend/`：FastAPI + SQLite local database + OIDC Provider + MFA + Cloudinary avatar upload
-- `frontend/`：React + Vite Portal UI
+- `backend/`: FastAPI + SQLite local database + OIDC Provider + MFA + Cloudinary avatar upload
+- `frontend/`: React + Vite Portal UI
 
-## 本地启动
+## Local Development
 
-1. 建立根目录 backend `.env`：
+1. Create the backend `.env` file at the project root:
 
 ```powershell
 copy .env.example .env
 ```
 
-2. 后端：
+2. Start the backend:
 
 ```powershell
 cd backend
@@ -32,7 +32,7 @@ alembic upgrade head
 python -m app.scripts.dev
 ```
 
-3. 前端：
+3. Start the frontend:
 
 ```powershell
 cd frontend
@@ -41,7 +41,7 @@ npm install
 npm run dev
 ```
 
-默认地址：
+Default URLs:
 
 - Frontend: `http://localhost:5173`
 - Backend: `http://localhost:8000`
@@ -49,25 +49,25 @@ npm run dev
 
 ## Docker Backend
 
-Backend 可以用 Docker 启动，数据库默认是 SQLite，并挂载到项目根目录 `data/portal.db`：
+The backend can run with Docker. By default, it uses SQLite and mounts the database at `data/portal.db` in the project root:
 
 ```powershell
 docker compose up --build
 ```
 
-每次 container 启动时，`backend/docker-entrypoint.sh` 会先执行：
+Each time the container starts, `backend/docker-entrypoint.sh` runs:
 
 ```powershell
 python -m alembic upgrade head
 ```
 
-迁移完成后才会启动 FastAPI。Docker 里的 SQLite 路径默认是 `sqlite:////app/data/portal.db`，对应本机项目根目录的 `data/portal.db`。
+FastAPI starts only after migrations finish. Inside Docker, the default SQLite path is `sqlite:////app/data/portal.db`, which maps to `data/portal.db` in the local project root.
 
-## Port 设置
+## Port Configuration
 
-Backend 的 `.env` 放在项目根目录；frontend 的 `.env` 放在 `frontend/` 里面。
+The backend `.env` file lives at the project root. The frontend `.env` file lives inside `frontend/`.
 
-项目根目录 `.env`：
+Project root `.env`:
 
 ```env
 DATABASE_URL=sqlite:///./data/portal.db
@@ -87,11 +87,11 @@ FRONTEND_PORT=5173
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
-如果你把根目录 `.env` 的 `BACKEND_PORT` 改成例如 `8010`，也要把 `frontend/.env` 的 `VITE_API_BASE_URL` 改成 `http://localhost:8010`。生产环境或自定义 domain 可以显式设置 `BACKEND_URL` 和 `FRONTEND_URL`。
+If you change `BACKEND_PORT` in the project root `.env` to something like `8010`, also update `VITE_API_BASE_URL` in `frontend/.env` to `http://localhost:8010`. For production or custom domains, set `BACKEND_URL` and `FRONTEND_URL` explicitly.
 
 ## Cloudinary
 
-Cloudinary secret 只配置在项目根目录 `.env`：
+Cloudinary secrets are configured only in the project root `.env`:
 
 ```env
 CLOUDINARY_CLOUD_NAME=
@@ -99,13 +99,13 @@ CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
 ```
 
-前端不会接触 Cloudinary secret。头像由 frontend 上传到 backend，再由 backend 校验并上传到 Cloudinary。
+The frontend never receives Cloudinary secrets. Avatars are uploaded from the frontend to the backend, then the backend validates and uploads them to Cloudinary.
 
 ## Forgot Password
 
-第一版不接真实 email API。忘记密码请求会生成 reset token，并在 `PASSWORD_RESET_DELIVERY=dev_log` 时写入 backend 日志，同时在开发响应里返回 reset link，方便本地测试。
+Version 1 does not integrate with a real email API. Forgot password requests generate a reset token. When `PASSWORD_RESET_DELIVERY=dev_log`, the backend writes the reset link to logs and also returns it in the development response for local testing.
 
-流程：
+Flow:
 
 ```text
 POST /api/auth/password/forgot
@@ -113,11 +113,11 @@ POST /api/auth/password/reset/inspect
 POST /api/auth/password/reset/complete
 ```
 
-如果账号开启 MFA，reset password 必须同时提供 reset token 和当前 Authenticator code。用户如果同时丢失密码和 MFA，第一版不提供自助恢复路径。
+If the account has MFA enabled, password reset must include both the reset token and the current Authenticator code. Version 1 does not provide a self-service recovery path for users who lose both their password and MFA access.
 
-## Profile 和 Session API
+## Profile And Session API
 
-Backend 已支持注册后补充资料，frontend 可以根据 `GET /api/auth/me` 的 `profile_completion.next_prompt_field` 做可跳过的 onboarding 弹窗。
+The backend supports profile completion after registration. The frontend can use `profile_completion.next_prompt_field` from `GET /api/auth/me` to show a skippable onboarding prompt.
 
 ```text
 PATCH /api/profile
@@ -132,51 +132,51 @@ POST /api/profile/avatar/restore
 DELETE /api/profile/avatar/history/{public_id}
 ```
 
-Session 会记录 login IP、last seen IP、User-Agent 和 device label。默认只信任 `request.client.host`；部署在反向代理后面时，确认代理可信再设置：
+Sessions record login IP, last seen IP, User-Agent, and device label. By default, only `request.client.host` is trusted. When deploying behind a reverse proxy, enable this only after confirming the proxy is trusted:
 
 ```env
 TRUST_PROXY_HEADERS=true
 ```
 
-Avatar history 存在 `users.avatar_history` JSON 里。用户换头像时旧 Cloudinary 图片会保留并进入历史列表；只有调用删除历史头像 API 时才会删除对应 Cloudinary asset。
+Avatar history is stored in the `users.avatar_history` JSON field. When a user changes their avatar, the old Cloudinary image is kept and added to history. The corresponding Cloudinary asset is deleted only when the delete avatar history API is called.
 
 ## OIDC Integrated Apps
 
-Portal backend 启动时会读取根目录 `.env` 的 `OIDC_CLIENTS_JSON`，并自动注册或更新 integrated apps。不需要手动改 DB。
+When the Portal backend starts, it reads `OIDC_CLIENTS_JSON` from the project root `.env` and automatically registers or updates integrated apps. No manual database edits are required.
 
 ```env
 OIDC_CLIENTS_JSON=[{"client_id":"media-editor-dev","name":"Media Editor Dev","redirect_uris":["http://localhost:3001/auth/callback"],"allowed_scopes":["openid","email","profile","phone"],"public":true}]
 ```
 
-`client_id` 和 `redirect_uri` 必须和接入 app 的 `.env` 完全一致。`seed_client` 脚本仍保留给一次性维护使用：
+`client_id` and `redirect_uri` must exactly match the `.env` values of the integrated app. The `seed_client` script is still available for one-off maintenance:
 
 ```powershell
 cd backend
 python -m app.scripts.seed_client --client-id media-editor-dev --name "Media Editor Dev" --redirect-uri "http://localhost:3001/auth/callback" --public
 ```
 
-其他 project 的登录入口指向：
+Other projects should point their login entry to:
 
 ```text
 GET /oauth/authorize?response_type=code&client_id=media-editor-dev&redirect_uri=http://localhost:3001/auth/callback&scope=openid email profile phone&state=...&code_challenge=...&code_challenge_method=S256
 ```
 
-如果用户还没有 Portal session，backend 会 redirect 到 frontend popup 页面：
+If the user does not have a Portal session yet, the backend redirects to the frontend popup page:
 
 ```text
 /authorize?next=<encoded oauth authorize url>
 ```
 
-`/authorize` 是给 `Login via Portal` popup window 使用的窄版登录页。它会显示目标 app 名称、requested scopes，并在用户完成 password/MFA 后继续回到原本的 `/oauth/authorize` flow。前端可以用 public context endpoint 取得 app 名称：
+`/authorize` is the compact login page for the `Login via Portal` popup window. It displays the target app name and requested scopes, then continues back to the original `/oauth/authorize` flow after password/MFA completion. The frontend can fetch the app name from the public context endpoint:
 
 ```text
 GET /oauth/authorize/context?client_id=...&redirect_uri=...&scope=...
 ```
 
-## 第一版边界
+## Version 1 Boundaries
 
-- 不做 owner/viewer/admin role。
-- 不做 team permission。
-- 不做 billing/subscription/quota。
-- 忘记密码只做 `dev_log` reset link，不接真实邮件服务。
-- 丢失 MFA 不提供自助恢复流程。
+- No owner/viewer/admin roles.
+- No team permissions.
+- No billing/subscription/quota support.
+- Forgot password only supports `dev_log` reset links; no real email delivery is integrated.
+- No self-service recovery flow for lost MFA access.
