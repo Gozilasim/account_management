@@ -27,7 +27,7 @@ frontend/dist/
 
 # Env
 .env
-.env.*
+.env
 !.env.example
 
 # Local database / generated
