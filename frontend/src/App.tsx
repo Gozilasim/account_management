@@ -1,6 +1,6 @@
 /*
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-13 03:02
+Updated at: 2026-05-13 23:34
 Description: Main GozilaSim ID React UI for authentication, profile, and sign-in protection screens.
 */
 
@@ -1951,6 +1951,7 @@ function ResetPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
   const [loadingInspect, setLoadingInspect] = useState(true);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1989,16 +1990,23 @@ function ResetPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
       setError("Passwords do not match.");
       return;
     }
+    const normalizedMfaCode = optionalText(mfaCode);
+    if (inspect.mfa_required && !normalizedMfaCode) {
+      setError("Enter the current verification code.");
+      return;
+    }
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
       await api.completePasswordReset({
         token,
-        new_password: newPassword
+        new_password: newPassword,
+        ...(normalizedMfaCode ? { mfa_code: normalizedMfaCode } : {})
       });
       setNewPassword("");
       setConfirmPassword("");
+      setMfaCode("");
       setMessage("Password reset. You can sign in now.");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Password reset failed.");
@@ -2033,6 +2041,12 @@ function ResetPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
         <form onSubmit={submit} className="form-stack">
           <Field label="New password" type="password" value={newPassword} onChange={setNewPassword} autoComplete="new-password" />
           <Field label="Confirm password" type="password" value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" />
+          {inspect.mfa_required && (
+            <>
+              <Field label="Authenticator code" value={mfaCode} onChange={setMfaCode} autoComplete="one-time-code" />
+              <div className="field-help">Use the current code from your verification app.</div>
+            </>
+          )}
           <Alert message={error} />
           <button className="primary" disabled={busy}>
             {busy ? "Resetting..." : "Reset password"}

@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 02:17
+# Updated at: 2026-05-13 23:34
 # Description: Authentication, session, password, and MFA API routes.
 
 from __future__ import annotations
@@ -325,7 +325,7 @@ def inspect_password_reset(
     if not user or not user.is_active:
         return ResetPasswordInspectResponse(valid=False, mfa_required=False)
 
-    return ResetPasswordInspectResponse(valid=True, mfa_required=False)
+    return ResetPasswordInspectResponse(valid=True, mfa_required=bool(user.mfa_enabled))
 
 
 @router.post("/password/reset/complete", response_model=MessageOut)
@@ -341,6 +341,14 @@ def complete_password_reset(
     user = db.get(User, challenge.user_id)
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token.")
+
+    if user.mfa_enabled:
+        if not user.mfa_secret:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="MFA setup is incomplete.")
+        if not payload.mfa_code:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MFA code is required.")
+        if not verify_totp(user.mfa_secret, payload.mfa_code):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid MFA code.")
 
     user.password_hash = hash_password(payload.new_password)
     challenge.consumed_at = utcnow()

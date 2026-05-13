@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 02:42
+# Updated at: 2026-05-13 23:34
 # Description: Backend tests for MFA, OIDC, and avatar flows.
 
 from __future__ import annotations
@@ -181,9 +181,9 @@ def test_forgot_password_unknown_email_returns_generic_success():
     assert payload["reset_link"] is None
 
 
-def test_password_reset_for_mfa_user_does_not_require_verification_code():
+def test_password_reset_for_mfa_user_requires_verification_code():
     client, SessionLocal = make_client()
-    user, _ = enroll_user(client, with_secret=True)
+    user, secret = enroll_user(client, with_secret=True)
     seed_oidc_client(SessionLocal)
     token_payload, _ = issue_oidc_token(client)
 
@@ -192,11 +192,25 @@ def test_password_reset_for_mfa_user_does_not_require_verification_code():
 
     inspect = client.post("/api/auth/password/reset/inspect", json={"token": reset_token})
     assert inspect.status_code == 200
-    assert inspect.json() == {"valid": True, "mfa_required": False}
+    assert inspect.json() == {"valid": True, "mfa_required": True}
+
+    missing_code = client.post(
+        "/api/auth/password/reset/complete",
+        json={"token": reset_token, "new_password": "newpassword123"},
+    )
+    assert missing_code.status_code == 401
+
+    current_code = pyotp.TOTP(secret).now()
+    bad_code = "000000" if current_code != "000000" else "111111"
+    invalid_code = client.post(
+        "/api/auth/password/reset/complete",
+        json={"token": reset_token, "new_password": "newpassword123", "mfa_code": bad_code},
+    )
+    assert invalid_code.status_code == 401
 
     complete = client.post(
         "/api/auth/password/reset/complete",
-        json={"token": reset_token, "new_password": "newpassword123"},
+        json={"token": reset_token, "new_password": "newpassword123", "mfa_code": current_code},
     )
     assert complete.status_code == 200
     assert client.get("/api/auth/me").status_code == 401

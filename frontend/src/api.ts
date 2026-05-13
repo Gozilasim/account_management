@@ -1,6 +1,6 @@
 /*
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-12 02:17
+Updated at: 2026-05-13 23:34
 Description: Frontend API client for GozilaSim ID backend endpoints.
 */
 
@@ -122,7 +122,7 @@ export const api = {
     request<ForgotPasswordResponse>("/api/auth/password/forgot", { method: "POST", body: payload }),
   inspectPasswordReset: (payload: { token: string }) =>
     request<ResetPasswordInspectResponse>("/api/auth/password/reset/inspect", { method: "POST", body: payload }),
-  completePasswordReset: (payload: { token: string; new_password: string }) =>
+  completePasswordReset: (payload: { token: string; new_password: string; mfa_code?: string }) =>
     request<{ message: string }>("/api/auth/password/reset/complete", { method: "POST", body: payload }),
   updateProfile: (payload: ProfileUpdatePayload) =>
     request<User>("/api/profile", { method: "PATCH", body: payload }),
