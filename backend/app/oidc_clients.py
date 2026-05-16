@@ -1,6 +1,6 @@
 # Created at: 2026-05-12 02:42
-# Updated at: 2026-05-12 02:42
-# Description: OIDC integrated app parsing and database synchronization helpers.
+# Updated at: 2026-05-17 02:58
+# Description: OIDC integrated app parsing, launcher metadata, and database synchronization helpers.
 
 from __future__ import annotations
 
@@ -35,9 +35,13 @@ class OidcClientConfigError(ValueError):
 class OidcClientDefinition:
     client_id: str
     name: str
+    home_url: str | None
+    launch_url: str | None
+    icon_url: str | None
     redirect_uris: list[str]
     allowed_scopes: list[str]
     public: bool
+    launcher_visible: bool
 
 
 # ###############################################
@@ -65,6 +69,9 @@ def _parse_client_item(item: Any, index: int) -> OidcClientDefinition:
 
     client_id = _required_string(item, "client_id", index, max_length=120)
     name = _required_string(item, "name", index, max_length=120)
+    home_url = _optional_string(item.get("home_url"), "home_url", index, max_length=2048)
+    launch_url = _optional_string(item.get("launch_url"), "launch_url", index, max_length=2048)
+    icon_url = _optional_string(item.get("icon_url"), "icon_url", index, max_length=2048)
     redirect_uris = _string_list(item.get("redirect_uris"), "redirect_uris", index, required=True)
     allowed_scopes = _string_list(
         item.get("allowed_scopes", DEFAULT_ALLOWED_SCOPES),
@@ -79,12 +86,18 @@ def _parse_client_item(item: Any, index: int) -> OidcClientDefinition:
     if public is not True:
         raise OidcClientConfigError(f"OIDC_CLIENTS_JSON[{index}].public must be true for env-configured clients.")
 
+    launcher_visible = _optional_bool(item.get("launcher_visible", True), "launcher_visible", index)
+
     return OidcClientDefinition(
         client_id=client_id,
         name=name,
+        home_url=home_url,
+        launch_url=launch_url,
+        icon_url=icon_url,
         redirect_uris=redirect_uris,
         allowed_scopes=allowed_scopes,
         public=True,
+        launcher_visible=launcher_visible,
     )
 
 
@@ -97,6 +110,26 @@ def _required_string(item: dict[str, Any], field: str, index: int, max_length: i
     if len(normalized) > max_length:
         raise OidcClientConfigError(f"OIDC_CLIENTS_JSON[{index}].{field} is too long.")
     return normalized
+
+
+def _optional_string(value: Any, field: str, index: int, max_length: int) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise OidcClientConfigError(f"OIDC_CLIENTS_JSON[{index}].{field} must be a string.")
+
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if len(normalized) > max_length:
+        raise OidcClientConfigError(f"OIDC_CLIENTS_JSON[{index}].{field} is too long.")
+    return normalized
+
+
+def _optional_bool(value: Any, field: str, index: int) -> bool:
+    if not isinstance(value, bool):
+        raise OidcClientConfigError(f"OIDC_CLIENTS_JSON[{index}].{field} must be a boolean.")
+    return value
 
 
 def _string_list(value: Any, field: str, index: int, required: bool) -> list[str]:
@@ -128,6 +161,10 @@ def upsert_oidc_client(
     redirect_uris: list[str],
     allowed_scopes: list[str],
     public: bool,
+    home_url: str | None = None,
+    launch_url: str | None = None,
+    icon_url: str | None = None,
+    launcher_visible: bool = True,
     client_secret: str | None = None,
 ) -> OidcClient:
     client = next(
@@ -150,8 +187,12 @@ def upsert_oidc_client(
         raise OidcClientConfigError("Confidential OIDC clients require a client secret.")
 
     client.name = name
+    client.home_url = home_url
+    client.launch_url = launch_url
+    client.icon_url = icon_url
     client.redirect_uris = redirect_uris
     client.allowed_scopes = allowed_scopes
+    client.launcher_visible = launcher_visible
     client.is_confidential = not public
     client.is_active = True
     if public:
@@ -169,9 +210,13 @@ def sync_oidc_clients_from_json(db: Session, raw_json: str | None) -> int:
             db,
             client_id=definition.client_id,
             name=definition.name,
+            home_url=definition.home_url,
+            launch_url=definition.launch_url,
+            icon_url=definition.icon_url,
             redirect_uris=definition.redirect_uris,
             allowed_scopes=definition.allowed_scopes,
             public=definition.public,
+            launcher_visible=definition.launcher_visible,
         )
     return len(definitions)
 

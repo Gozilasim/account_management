@@ -1,7 +1,7 @@
 <!--
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-14 00:11
-Description: Setup and usage guide for the unified account Portal.
+Updated at: 2026-05-16 17:43
+Description: Setup and usage guide for the unified account Portal and app launcher.
 -->
 
 # Account Management Portal
@@ -145,7 +145,7 @@ Avatar history is stored in the `users.avatar_history` JSON field. When a user c
 When the Portal backend starts, it reads `OIDC_CLIENTS_JSON` from the project root `.env` and automatically registers or updates integrated apps. No manual database edits are required.
 
 ```env
-OIDC_CLIENTS_JSON=[{"client_id":"media-editor-dev","name":"Media Editor Dev","redirect_uris":["http://localhost:3001/auth/callback"],"allowed_scopes":["openid","email","profile","phone"],"public":true}]
+OIDC_CLIENTS_JSON=[{"client_id":"media-editor-dev","name":"Media Editor Dev","home_url":"http://localhost:3001","icon_url":"http://localhost:3001/favicon.png","redirect_uris":["http://localhost:3001/auth/callback"],"allowed_scopes":["openid","email","profile","phone"],"public":true,"launcher_visible":true}]
 ```
 
 `client_id` and `redirect_uri` must exactly match the `.env` values of the integrated app. The `seed_client` script is still available for one-off maintenance:
@@ -171,6 +171,18 @@ If the user does not have a Portal session yet, the backend redirects to the fro
 
 ```text
 GET /oauth/authorize/context?client_id=...&redirect_uri=...&scope=...
+```
+
+The account console app launcher uses the authenticated endpoint below. `home_url` is required for a client to appear in the launcher, `icon_url` is optional, and `launcher_visible` defaults to `true`.
+
+```text
+GET /api/apps/launcher
+```
+
+Apps that use Portal sign-in can send their top-right account or app-launcher button to the Portal account home. If the browser still has a valid Portal session, the user lands signed in:
+
+```js
+window.location.href = "https://gozilasim-account.gozilasim.win/account";
 ```
 
 ## Version 1 Boundaries

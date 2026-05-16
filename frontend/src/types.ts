@@ -1,7 +1,7 @@
 /*
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-12 02:17
-Description: Shared frontend TypeScript types for GozilaSim ID API responses.
+Updated at: 2026-05-17 02:58
+Description: Shared frontend TypeScript types for GozilaSim ID API and app launcher responses.
 */
 
 // ###############################################
@@ -82,6 +82,19 @@ export type AuthorizeContext = {
   redirect_uri: string;
   scope: string;
   scopes: string[];
+};
+
+
+// ###############################################
+// App Launcher Types
+// ###############################################
+
+export type LauncherApp = {
+  client_id: string;
+  name: string;
+  home_url: string;
+  launch_url: string | null;
+  icon_url: string | null;
 };
 
 // ###############################################

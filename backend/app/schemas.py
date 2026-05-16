@@ -1,6 +1,6 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 02:17
-# Description: Pydantic request and response schemas for Portal APIs.
+# Updated at: 2026-05-17 02:58
+# Description: Pydantic request and response schemas for Portal APIs and launcher data.
 
 from __future__ import annotations
 
@@ -247,6 +247,18 @@ class OnboardingSkipRequest(BaseModel):
 
 class AvatarRestoreRequest(BaseModel):
     public_id: str = Field(min_length=1, max_length=255)
+
+
+# ###############################################
+# Launcher Schemas
+# ###############################################
+
+class LauncherAppOut(BaseModel):
+    client_id: str
+    name: str
+    home_url: str
+    launch_url: str | None = None
+    icon_url: str | None = None
 
 
 # ###############################################

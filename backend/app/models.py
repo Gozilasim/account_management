@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 02:17
+# Updated at: 2026-05-17 02:58
 # Description: SQLAlchemy ORM models for Portal accounts, profile data, sessions, audit events, MFA, and OIDC.
 
 from __future__ import annotations
@@ -129,8 +129,12 @@ class OidcClient(Base, TimestampMixin):
     client_id: Mapped[str] = mapped_column(String(120), unique=True, index=True, nullable=False)
     client_secret_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    home_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    launch_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    icon_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     redirect_uris: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     allowed_scopes: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["openid", "email", "profile"], nullable=False)
+    launcher_visible: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_confidential: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

@@ -1,20 +1,32 @@
 /*
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-13 23:34
-Description: Main GozilaSim ID React UI for authentication, profile, and sign-in protection screens.
+Updated at: 2026-05-17 02:58
+Description: Main GozilaSim ID React UI for authentication, profile, launcher, legal, and sign-in protection screens.
 */
 
 // ###############################################
 // Imports
 // ###############################################
 
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, FormEvent, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, ApiError } from "./api";
 import logoMarkSrc from "./assets/gozilasim-logo.png";
+import {
+  labelForLocale,
+  LANGUAGE_OPTIONS,
+  LANGUAGE_STORAGE_KEY,
+  localeForLanguage,
+  resolveSupportedLanguage,
+  translate,
+  type SupportedLanguage,
+  type TranslationKey
+} from "./i18n";
 import type {
   AuthorizeContext,
   AvatarHistoryItem,
   GenderValue,
+  LauncherApp,
   LoginResponse,
   MfaSetup,
   ProfilePromptField,
@@ -44,21 +56,22 @@ const LOGIN_BACKGROUND_OPTIONS: Array<{ id: string; src: string }> = [
   { id: "background-5194", src: "/backgrounds/5194-183786499_medium.mp4" }
 ];
 
-const GENDER_OPTIONS: Array<{ value: GenderValue; label: string }> = [
-  { value: "male", label: "Male" },
-  { value: "female", label: "Female" },
-  { value: "non_binary", label: "Non-binary" },
-  { value: "prefer_not_to_say", label: "Prefer not to say" },
-  { value: "custom", label: "Custom" }
+const GENDER_OPTIONS: Array<{ value: GenderValue; labelKey: TranslationKey }> = [
+  { value: "male", labelKey: "gender.male" },
+  { value: "female", labelKey: "gender.female" },
+  { value: "non_binary", labelKey: "gender.nonBinary" },
+  { value: "prefer_not_to_say", labelKey: "gender.preferNot" },
+  { value: "custom", labelKey: "gender.custom" }
 ];
 
 // ###############################################
 // Routing Helpers
 // ###############################################
 
-type Route = "login" | "register" | "forgot-password" | "reset-password" | "profile-onboarding" | "authorize" | "account" | "profile" | "profile-edit" | "security";
+type LegalRoute = "privacy" | "terms" | "help" | "about";
+type Route = "login" | "register" | "forgot-password" | "reset-password" | "profile-onboarding" | "authorize" | "account" | "profile" | "profile-edit" | "security" | LegalRoute;
 type ConsoleRoute = Extract<Route, "account" | "profile" | "security">;
-type AuthenticatedHandler = (user: User, options?: { showOnboarding?: boolean }) => void;
+type AuthenticatedHandler = (user: User) => void;
 type ProfileEditField = "name" | "gender" | "phone" | "birthday" | "language" | "timezone" | "picture";
 type SecuritySection = "activity" | "password" | "verification" | "sessions";
 type ThemeField = "background" | "surface" | "surfaceMuted" | "text" | "mutedText" | "accent";
@@ -75,6 +88,100 @@ const CONSOLE_NAV: Array<{
   { route: "security", label: "Security and sign-in", icon: "security", tone: "cyan" }
 ];
 
+const LEGAL_ROUTES: LegalRoute[] = ["privacy", "terms", "help", "about"];
+const LEGAL_NAV: Array<{ route: LegalRoute; label: string }> = [
+  { route: "privacy", label: "Privacy" },
+  { route: "terms", label: "Terms" },
+  { route: "help", label: "Help" },
+  { route: "about", label: "About" }
+];
+
+const LEGAL_CONTENT: Record<LegalRoute, {
+  documentLabel: string;
+  headline: string;
+  body: string;
+  toc: string[];
+  highlights: Array<{ title: string; text: string }>;
+}> = {
+  privacy: {
+    documentLabel: "GOZILASIM PRIVACY POLICY",
+    headline: "When you use our services, you trust us with your information.",
+    body: "This policy explains what we collect, why we collect it, and how you can manage your account data.",
+    toc: [
+      "Introduction",
+      "Information GozilaSim collects",
+      "Why GozilaSim collects data",
+      "Your privacy controls",
+      "Sharing your information",
+      "Keeping your information secure",
+      "Exporting & deleting your information",
+      "Retaining your information",
+      "About this policy"
+    ],
+    highlights: [
+      { title: "Your privacy controls", text: "Review profile details, sessions, and sign-in protection from your account center." },
+      { title: "Keeping your information secure", text: "Security settings and activity records help protect access to your account." },
+      { title: "Exporting & deleting your information", text: "Account data should remain understandable and manageable from one place." }
+    ]
+  },
+  terms: {
+    documentLabel: "GOZILASIM TERMS OF SERVICE",
+    headline: "These terms explain how GozilaSim ID works for your account.",
+    body: "Use this page to understand account access, connected apps, responsibilities, and service limits.",
+    toc: [
+      "Introduction",
+      "Using GozilaSim ID",
+      "Connected applications",
+      "Account responsibilities",
+      "Security expectations",
+      "Service availability",
+      "Changes to these terms"
+    ],
+    highlights: [
+      { title: "Using your account", text: "Your GozilaSim ID signs you into supported apps with one account experience." },
+      { title: "Connected applications", text: "Apps may request access only to the scopes needed for their sign-in flow." },
+      { title: "Account responsibilities", text: "Keep your password, recovery details, and active sessions current." }
+    ]
+  },
+  help: {
+    documentLabel: "GOZILASIM HELP",
+    headline: "Find help for sign-in, profile, password, and connected app access.",
+    body: "Common account actions are grouped here so you can recover access and manage your information faster.",
+    toc: [
+      "Get started",
+      "Sign in problems",
+      "Profile updates",
+      "Password help",
+      "Extra verification",
+      "Connected apps",
+      "Contact support"
+    ],
+    highlights: [
+      { title: "Sign in problems", text: "Use password reset or extra verification prompts when your session needs another check." },
+      { title: "Profile updates", text: "Manage your name, phone, birthday, language, timezone, and profile picture." },
+      { title: "Connected apps", text: "Open supported apps from the app launcher when they are linked to your account." }
+    ]
+  },
+  about: {
+    documentLabel: "ABOUT GOZILASIM ID",
+    headline: "GozilaSim ID is the account center for your profile and secure access.",
+    body: "It brings profile details, sign-in protection, session review, and connected app access into one place.",
+    toc: [
+      "Overview",
+      "Account center",
+      "Profile management",
+      "Security and sign-in",
+      "App launcher",
+      "Product principles"
+    ],
+    highlights: [
+      { title: "Account center", text: "The account home gives you a single starting point for personal and security settings." },
+      { title: "Security and sign-in", text: "Password, sessions, and extra verification controls are kept close to your profile." },
+      { title: "App launcher", text: "The launcher provides quick access to apps connected to this identity system." }
+    ]
+  }
+};
+
 const PROFILE_EDIT_FIELDS: ProfileEditField[] = ["name", "gender", "phone", "birthday", "language", "timezone", "picture"];
 const SECURITY_SECTIONS: SecuritySection[] = ["activity", "password", "verification", "sessions"];
 
@@ -87,18 +194,56 @@ const DEFAULT_THEME: ThemeSettings = {
   accent: "#8ab4f8"
 };
 
-const THEME_FIELDS: Array<{ key: ThemeField; label: string; description: string }> = [
-  { key: "background", label: "Background", description: "Page and shell background" },
-  { key: "surface", label: "Surface", description: "Panels, menus, and forms" },
-  { key: "surfaceMuted", label: "Row surface", description: "Rows, secondary cards, and hover bases" },
-  { key: "text", label: "Text", description: "Primary readable text" },
-  { key: "mutedText", label: "Muted text", description: "Descriptions and helper text" },
-  { key: "accent", label: "Accent", description: "Buttons, focus, and selected states" }
+const THEME_FIELDS: Array<{ key: ThemeField; labelKey: TranslationKey; descriptionKey: TranslationKey }> = [
+  { key: "background", labelKey: "theme.fieldBackground", descriptionKey: "theme.fieldBackgroundDesc" },
+  { key: "surface", labelKey: "theme.fieldSurface", descriptionKey: "theme.fieldSurfaceDesc" },
+  { key: "surfaceMuted", labelKey: "theme.fieldSurfaceMuted", descriptionKey: "theme.fieldSurfaceMutedDesc" },
+  { key: "text", labelKey: "theme.fieldText", descriptionKey: "theme.fieldTextDesc" },
+  { key: "mutedText", labelKey: "theme.fieldMutedText", descriptionKey: "theme.fieldMutedTextDesc" },
+  { key: "accent", labelKey: "theme.fieldAccent", descriptionKey: "theme.fieldAccentDesc" }
 ];
+
+// ###############################################
+// Language Helpers
+// ###############################################
+
+type I18nContextValue = {
+  language: SupportedLanguage;
+  setLanguage: (language: SupportedLanguage) => void;
+  t: (key: TranslationKey, values?: Record<string, string | number>) => string;
+  formatDateTime: (value: string) => string;
+};
+
+const I18nContext = createContext<I18nContextValue | null>(null);
+
+function loadStoredLanguage(): SupportedLanguage {
+  try {
+    return resolveSupportedLanguage(window.localStorage.getItem(LANGUAGE_STORAGE_KEY));
+  } catch {
+    return "en";
+  }
+}
+
+function saveStoredLanguage(language: SupportedLanguage) {
+  try {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, localeForLanguage(language));
+  } catch {
+    // localStorage may be unavailable in strict browser modes.
+  }
+}
+
+function useI18n() {
+  const context = useContext(I18nContext);
+  if (!context) {
+    throw new Error("I18n context is not available.");
+  }
+  return context;
+}
 
 function getRoute(): Route {
   const path = window.location.pathname.replace(/^\/+/, "");
   if (
+    isLegalRoute(path) ||
     path === "register" ||
     path === "forgot-password" ||
     path === "reset-password" ||
@@ -148,15 +293,15 @@ function securitySectionFromUrl(): SecuritySection | null {
   return SECURITY_SECTIONS.includes(section as SecuritySection) ? section as SecuritySection : null;
 }
 
-function profileEditTitle(field: ProfileEditField) {
+function profileEditTitle(field: ProfileEditField, t: I18nContextValue["t"]) {
   const titleByField: Record<ProfileEditField, string> = {
-    picture: "Profile picture",
-    name: "Name",
-    gender: "Gender",
-    phone: "Phone",
-    birthday: "Birthday",
-    language: "Language",
-    timezone: "Timezone"
+    picture: t("common.profilePicture"),
+    name: t("common.name"),
+    gender: t("common.gender"),
+    phone: t("common.phone"),
+    birthday: t("common.birthday"),
+    language: t("common.language"),
+    timezone: t("common.timezone")
   };
   return titleByField[field];
 }
@@ -195,11 +340,11 @@ function parseAuthorizeRequest(next: string | null) {
   }
 }
 
-function oauthScopeLabel(scope: string) {
-  if (scope === "openid") return "Sign-in identity";
-  if (scope === "email") return "Email address";
-  if (scope === "profile") return "Profile details";
-  if (scope === "phone") return "Phone number";
+function oauthScopeLabel(scope: string, t: I18nContextValue["t"]) {
+  if (scope === "openid") return t("oauth.scopeOpenid");
+  if (scope === "email") return t("oauth.scopeEmail");
+  if (scope === "profile") return t("oauth.scopeProfile");
+  if (scope === "phone") return t("oauth.scopePhone");
   return humanize(scope);
 }
 
@@ -217,6 +362,19 @@ function userInitials(user: User | null) {
     .join("") || user.email[0].toUpperCase();
 }
 
+function isLegalRoute(value: string): value is LegalRoute {
+  return LEGAL_ROUTES.includes(value as LegalRoute);
+}
+
+function appInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "APP";
+}
+
 function optionalText(value: string): string | null {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
@@ -226,10 +384,10 @@ function displayValue(value: string | null | undefined, fallback = "Not set") {
   return value?.trim() || fallback;
 }
 
-function formatDateTime(value: string) {
+function formatDateTime(value: string, language: SupportedLanguage = resolveSupportedLanguage(document.documentElement.lang)) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(localeForLanguage(language), {
     dateStyle: "medium",
     timeStyle: "short"
   });
@@ -241,30 +399,31 @@ function humanize(value: string) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function metadataSummary(metadata: Record<string, unknown> | null) {
-  if (!metadata || Object.keys(metadata).length === 0) return "No extra details";
+function metadataSummary(metadata: Record<string, unknown> | null, t: I18nContextValue["t"]) {
+  if (!metadata || Object.keys(metadata).length === 0) return t("security.noExtraDetails");
   return Object.entries(metadata)
-    .map(([key, value]) => `${humanize(key)}: ${String(value)}`)
+    .map(([key, value]) => t("format.metadata", { key: humanize(key), value: String(value) }))
     .join(", ");
 }
 
-function genderLabel(value: string | null) {
-  if (!value) return "Not set";
-  return GENDER_OPTIONS.find((option) => option.value === value)?.label ?? humanize(value);
+function genderLabel(value: string | null, t: I18nContextValue["t"]) {
+  if (!value) return t("common.notSet");
+  const option = GENDER_OPTIONS.find((item) => item.value === value);
+  return option ? t(option.labelKey) : humanize(value);
 }
 
 function fullName(user: User) {
   return [user.first_name, user.last_name].filter(Boolean).join(" ") || user.display_name;
 }
 
-function primaryLanguage(user: User) {
-  return displayValue(user.locale, "Not set");
+function primaryLanguage(user: User, emptyLabel: string) {
+  return labelForLocale(user.locale, emptyLabel);
 }
 
-function latestSecurityEvent(events: SecurityEvent[]) {
-  if (events.length === 0) return "No recent security activity";
+function latestSecurityEvent(events: SecurityEvent[], t: I18nContextValue["t"], format: I18nContextValue["formatDateTime"]) {
+  if (events.length === 0) return t("security.noRecentActivity");
   const event = events[0];
-  return `${humanize(event.event_type)} · ${formatDateTime(event.created_at)}`;
+  return `${humanize(event.event_type)} · ${format(event.created_at)}`;
 }
 
 // ###############################################
@@ -479,13 +638,13 @@ function SelectField<T extends string>(props: {
   value: T | "";
   onChange: (value: T | "") => void;
   options: Array<{ value: T; label: string }>;
-  placeholder?: string;
+  placeholder?: string | null;
 }) {
   return (
     <label className="field">
       <span>{props.label}</span>
       <select value={props.value} onChange={(event) => props.onChange(event.target.value as T | "")}>
-        <option value="">{props.placeholder ?? "Select an option"}</option>
+        {props.placeholder !== null && <option value="">{props.placeholder ?? "Select an option"}</option>}
         {props.options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
@@ -793,6 +952,7 @@ function ProfilePictureModal({
   setUser: (user: User) => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [view, setView] = useState<"change" | "history">("change");
   const [menuOpen, setMenuOpen] = useState(false);
   const [history, setHistory] = useState<AvatarHistoryItem[]>(user.avatar_history ?? []);
@@ -802,7 +962,7 @@ function ProfilePictureModal({
   const [historyLoading, setHistoryLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuPresence = useMotionPresence(menuOpen, MOTION_FAST_MS);
-  const selectedFileName = selectedFile?.name ?? "No file selected";
+  const selectedFileName = selectedFile?.name ?? t("avatar.noFile");
 
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
@@ -831,7 +991,7 @@ function ProfilePictureModal({
     try {
       setHistory(await api.listAvatarHistory());
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Profile picture history could not be loaded.");
+      setError(err instanceof ApiError ? err.message : t("avatar.historyFailed"));
     } finally {
       setHistoryLoading(false);
     }
@@ -852,7 +1012,7 @@ function ProfilePictureModal({
       setHistory(updatedUser.avatar_history);
       setView("change");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Profile picture could not be restored.");
+      setError(err instanceof ApiError ? err.message : t("avatar.restoreFailed"));
     } finally {
       setBusy(false);
     }
@@ -864,13 +1024,13 @@ function ProfilePictureModal({
     setError(null);
     try {
       if (!selectedFile) {
-        setError("Choose an image to upload.");
+        setError(t("avatar.chooseImage"));
         return;
       }
       setUser(await api.uploadAvatar(selectedFile));
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Profile image upload failed.");
+      setError(err instanceof ApiError ? err.message : t("avatar.uploadFailed"));
     } finally {
       setBusy(false);
     }
@@ -881,7 +1041,7 @@ function ProfilePictureModal({
       <button
         type="button"
         className={`picture-more-button ${menuOpen ? "active" : ""}`}
-        aria-label="More profile picture options"
+        aria-label={t("avatar.more")}
         aria-expanded={menuOpen}
         onClick={() => setMenuOpen((open) => !open)}
         disabled={busy}
@@ -891,22 +1051,22 @@ function ProfilePictureModal({
       {menuPresence.mounted && (
         <div className="picture-more-menu" role="menu" data-state={menuPresence.state}>
           <button type="button" role="menuitem" disabled>
-            Profile picture visibility
+            {t("avatar.visibility")}
           </button>
           <button type="button" role="menuitem" className={view === "history" ? "active" : ""} onClick={openHistoryView}>
-            Past profile pictures
+            {t("avatar.history")}
           </button>
           <button type="button" role="menuitem" disabled>
-            Birthday settings
+            {t("common.birthday")}
           </button>
           <button type="button" role="menuitem" disabled>
-            Remove profile picture
+            {t("avatar.remove")}
           </button>
           <button type="button" role="menuitem" disabled>
-            Help
+            {t("avatar.help")}
           </button>
           <button type="button" role="menuitem" disabled>
-            Send feedback
+            {t("avatar.feedback")}
           </button>
         </div>
       )}
@@ -917,10 +1077,10 @@ function ProfilePictureModal({
     return (
       <div className="picture-modal-card picture-history-card">
         <div className="picture-history-header">
-          <button type="button" className="picture-back-button" aria-label="Back to change profile picture" onClick={() => setView("change")} disabled={busy}>
+          <button type="button" className="picture-back-button" aria-label={t("avatar.back")} onClick={() => setView("change")} disabled={busy}>
             <BackIcon />
           </button>
-          <h1>Past profile pictures</h1>
+          <h1>{t("avatar.history")}</h1>
           {menu}
         </div>
 
@@ -930,7 +1090,7 @@ function ProfilePictureModal({
               key={item.public_id}
               type="button"
               className="picture-history-item"
-              aria-label="Restore this profile picture"
+              aria-label={t("avatar.restore")}
               onClick={() => restorePicture(item)}
               disabled={busy || historyLoading}
             >
@@ -947,10 +1107,10 @@ function ProfilePictureModal({
   return (
     <form className="picture-modal-card" onSubmit={savePicture}>
       <div className="picture-modal-header">
-        <button type="button" className="picture-close-button" aria-label="Close profile picture" onClick={onClose} disabled={busy}>
+        <button type="button" className="picture-close-button" aria-label={t("avatar.close")} onClick={onClose} disabled={busy}>
           <CloseIcon />
         </button>
-        <h1>Change profile picture</h1>
+        <h1>{t("avatar.change")}</h1>
         {menu}
       </div>
 
@@ -967,7 +1127,7 @@ function ProfilePictureModal({
             <ImageIcon />
           </span>
           <span>
-            <strong>Upload from device</strong>
+            <strong>{t("avatar.uploadFromDevice")}</strong>
             <small>{selectedFileName}</small>
           </span>
           <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
@@ -977,8 +1137,8 @@ function ProfilePictureModal({
             <CameraIcon />
           </span>
           <span>
-            <strong>Take a picture</strong>
-            <small>Camera capture is not available yet.</small>
+            <strong>{t("avatar.takePicture")}</strong>
+            <small>{t("avatar.cameraUnavailable")}</small>
           </span>
         </button>
       </div>
@@ -986,14 +1146,23 @@ function ProfilePictureModal({
       <Alert message={error} />
       <div className="button-row picture-buttons">
         <button className="primary" disabled={busy || !selectedFile}>
-          {busy ? "Saving..." : "Save"}
+          {busy ? t("common.saving") : t("common.save")}
         </button>
         <button type="button" className="secondary" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </button>
       </div>
     </form>
   );
+}
+
+// ###############################################
+// Onboarding Helpers
+// ###############################################
+
+async function skipAndCompleteOnboardingPrompt(field: ProfilePromptField) {
+  await api.skipProfileOnboarding(field);
+  return api.completeProfileOnboarding();
 }
 
 function Shell({
@@ -1009,14 +1178,39 @@ function Shell({
   children: ReactNode;
   onLogout: () => void;
 }) {
+  const { t } = useI18n();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [appsLauncherOpen, setAppsLauncherOpen] = useState(false);
   const [pictureModalOpen, setPictureModalOpen] = useState(false);
   const [topbarQuery, setTopbarQuery] = useState("");
+  const [launcherApps, setLauncherApps] = useState<LauncherApp[]>([]);
+  const [launcherLoaded, setLauncherLoaded] = useState(false);
+  const [launcherLoading, setLauncherLoading] = useState(false);
+  const [launcherError, setLauncherError] = useState<string | null>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const appsLauncherRef = useRef<HTMLDivElement>(null);
   const accountMenuPresence = useMotionPresence(accountMenuOpen, MOTION_FAST_MS);
   const appsLauncherPresence = useMotionPresence(appsLauncherOpen, MOTION_FAST_MS);
+  const pictureModalPresence = useMotionPresence(pictureModalOpen, MOTION_BASE_MS);
+  const hasOnboardingPrompt = Boolean(
+    route === "account" && user.profile_completion.next_prompt_field && !user.profile_completion.onboarding_completed
+  );
+  const [onboardingModalOpen, setOnboardingModalOpen] = useState(hasOnboardingPrompt);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  const onboardingModalPresence = useMotionPresence(onboardingModalOpen, MOTION_BASE_MS);
+
+  const loadLauncherApps = useCallback(async () => {
+    setLauncherLoading(true);
+    setLauncherError(null);
+    try {
+      setLauncherApps(await api.listLauncherApps());
+    } catch (err) {
+      setLauncherError(err instanceof ApiError ? err.message : t("account.appsLoadFailed"));
+    } finally {
+      setLauncherLoaded(true);
+      setLauncherLoading(false);
+    }
+  }, [t]);
 
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
@@ -1045,7 +1239,28 @@ function Shell({
     };
   }, []);
 
+  useEffect(() => {
+    if (appsLauncherOpen && !launcherLoaded) {
+      void loadLauncherApps();
+    }
+  }, [appsLauncherOpen, launcherLoaded, loadLauncherApps]);
+
+  useEffect(() => {
+    if (route !== "account" || !hasOnboardingPrompt) {
+      setOnboardingModalOpen(false);
+      setOnboardingDismissed(false);
+      return;
+    }
+    if (!onboardingDismissed) setOnboardingModalOpen(true);
+  }, [route, hasOnboardingPrompt, onboardingDismissed, user.id]);
+
   const navigateConsole = (nextRoute: ConsoleRoute) => {
+    setAccountMenuOpen(false);
+    setAppsLauncherOpen(false);
+    go(nextRoute);
+  };
+
+  const navigateLegal = (nextRoute: LegalRoute) => {
     setAccountMenuOpen(false);
     setAppsLauncherOpen(false);
     go(nextRoute);
@@ -1055,6 +1270,29 @@ function Shell({
     setAccountMenuOpen(false);
     setAppsLauncherOpen(false);
     setPictureModalOpen(true);
+  };
+
+  const dismissOnboardingModal = () => {
+    setOnboardingDismissed(true);
+    setOnboardingModalOpen(false);
+  };
+
+  const skipAndCloseOnboardingModal = async () => {
+    const field = user.profile_completion.next_prompt_field;
+    dismissOnboardingModal();
+    if (!field || user.profile_completion.onboarding_completed) return;
+
+    try {
+      setUser(await skipAndCompleteOnboardingPrompt(field));
+    } catch {
+      // Dismissal should not trap the user if the best-effort persistence request fails.
+    }
+  };
+
+  const openLauncherApp = (app: LauncherApp) => {
+    setAccountMenuOpen(false);
+    setAppsLauncherOpen(false);
+    window.location.href = app.launch_url || app.home_url;
   };
 
   function submitTopbarSearch(event: FormEvent) {
@@ -1071,22 +1309,31 @@ function Shell({
           <LogoMark />
           <span>{PRODUCT_NAME}</span>
         </button>
-        <nav className="sidebar-nav" aria-label="Account sections">
-          {CONSOLE_NAV.map((item) => (
-            <button
-              key={item.route}
-              className={`nav-item ${route === item.route ? "active" : ""}`}
-              onClick={() => navigateConsole(item.route)}
-            >
-              <span className={`nav-icon nav-icon-${item.tone}`}>
-                <ConsoleIcon icon={item.icon} />
-              </span>
-              <span>{item.label}</span>
-            </button>
-          ))}
+        <nav className="sidebar-nav" aria-label={t("account.settings")}>
+          {CONSOLE_NAV.map((item) => {
+            const label = item.route === "account" ? t("nav.home") : item.route === "profile" ? t("nav.personalInfo") : t("nav.security");
+            return (
+              <button
+                key={item.route}
+                className={`nav-item ${route === item.route ? "active" : ""}`}
+                onClick={() => navigateConsole(item.route)}
+              >
+                <span className={`nav-icon nav-icon-${item.tone}`}>
+                  <ConsoleIcon icon={item.icon} />
+                </span>
+                <span>{label}</span>
+              </button>
+            );
+          })}
         </nav>
         <div className="sidebar-footer">
-          <span>Secure account center</span>
+          <nav className="sidebar-footer-links" aria-label="Legal pages">
+            {LEGAL_NAV.map((item) => (
+              <button type="button" key={item.route} onClick={() => navigateLegal(item.route)}>
+                {item.label}
+              </button>
+            ))}
+          </nav>
         </div>
       </aside>
 
@@ -1102,15 +1349,15 @@ function Shell({
             <input
               value={topbarQuery}
               onChange={(event) => setTopbarQuery(event.target.value)}
-              placeholder={`Search ${PRODUCT_NAME}`}
-              aria-label={`Search ${PRODUCT_NAME}`}
+              placeholder={t("account.search", { product: PRODUCT_NAME })}
+              aria-label={t("account.search", { product: PRODUCT_NAME })}
             />
           </form>
 
           <div className="apps-menu" ref={appsLauncherRef}>
             <button
               className="icon-button"
-              aria-label="Open apps launcher"
+              aria-label={t("account.openApps")}
               aria-expanded={appsLauncherOpen}
               onClick={() => {
                 setAppsLauncherOpen((open) => !open);
@@ -1120,15 +1367,40 @@ function Shell({
               <GridIcon />
             </button>
             {appsLauncherPresence.mounted && (
-              <div className="apps-popover" role="dialog" aria-label="Apps launcher" data-state={appsLauncherPresence.state}>
+              <div className="apps-popover" role="dialog" aria-label={t("account.appsLauncher")} data-state={appsLauncherPresence.state}>
                 <div className="apps-launcher-panel">
                   <div className="apps-launcher-header">
-                    <h2>Your favourites</h2>
-                    <button className="apps-edit-button" aria-label="Edit favourite apps" disabled>
+                    <h2>{t("account.favourites")}</h2>
+                    <button className="apps-edit-button" aria-label={t("account.editFavourites")} disabled>
                       <PencilIcon />
                     </button>
                   </div>
-                  <div className="apps-launcher-body" />
+                  <div className="apps-launcher-body">
+                    <div className="apps-grid">
+                      <button className="launcher-app-tile" onClick={() => navigateConsole("account")}>
+                        <span className="launcher-app-icon launcher-account-icon">
+                          <Avatar user={user} />
+                        </span>
+                        <span className="launcher-app-name">{t("common.account")}</span>
+                      </button>
+                      {launcherApps.map((app) => (
+                        <button
+                          key={app.client_id}
+                          className="launcher-app-tile"
+                          onClick={() => openLauncherApp(app)}
+                          title={app.name}
+                        >
+                          <LauncherAppIcon app={app} />
+                          <span className="launcher-app-name">{app.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {launcherLoading && <div className="launcher-inline-state">{t("account.appsLoading")}</div>}
+                    {launcherError && <div className="launcher-inline-state launcher-inline-error">{launcherError}</div>}
+                    {!launcherLoading && !launcherError && launcherLoaded && launcherApps.length === 0 && (
+                      <div className="launcher-inline-state">{t("account.noConnectedApps")}</div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1137,7 +1409,7 @@ function Shell({
           <div className="account-menu" ref={accountMenuRef}>
             <button
               className="avatar-button"
-              aria-label="Open account menu"
+              aria-label={t("account.openAccountMenu")}
               aria-expanded={accountMenuOpen}
               onClick={() => {
                 setAccountMenuOpen((open) => !open);
@@ -1148,24 +1420,24 @@ function Shell({
             </button>
             {accountMenuPresence.mounted && (
               <div className="account-popover" role="menu" data-state={accountMenuPresence.state}>
-                <button className="popover-close" aria-label="Close account menu" onClick={() => setAccountMenuOpen(false)}>
+                <button className="popover-close" aria-label={t("common.close")} onClick={() => setAccountMenuOpen(false)}>
                   <CloseIcon />
                 </button>
                 <div className="account-popover-email">{user.email}</div>
                 <div className="account-popover-avatar">
                   <Avatar user={user} />
-                  <button aria-label="Manage profile image" onClick={openProfilePictureModal}>
+                  <button aria-label={t("avatar.change")} onClick={openProfilePictureModal}>
                     <CameraIcon />
                   </button>
                 </div>
-                <h2>Hi, {user.display_name}!</h2>
+                <h2>{t("account.greeting", { name: user.display_name })}</h2>
                 <button className="account-manage-button" onClick={() => navigateConsole("profile")}>
-                  Manage your {PRODUCT_NAME}
+                  {t("account.manage", { product: PRODUCT_NAME })}
                 </button>
                 <div className="account-popover-actions">
-                  <button onClick={onLogout}>Sign out</button>
+                  <button onClick={onLogout}>{t("common.signOut")}</button>
                 </div>
-                <div className="account-popover-footer">Profile details and sign-in protection stay private to you.</div>
+                <div className="account-popover-footer">{t("account.popoverFooter")}</div>
               </div>
             )}
           </div>
@@ -1176,12 +1448,13 @@ function Shell({
           </div>
         </main>
       </div>
-      {pictureModalOpen && (
+      {pictureModalPresence.mounted && (
         <div
           className="picture-modal-overlay"
+          data-state={pictureModalPresence.state}
           role="dialog"
           aria-modal="true"
-          aria-label="Change profile picture"
+          aria-label={t("avatar.change")}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setPictureModalOpen(false);
           }}
@@ -1189,6 +1462,27 @@ function Shell({
           <ProfilePictureModal user={user} setUser={setUser} onClose={() => setPictureModalOpen(false)} />
         </div>
       )}
+      {onboardingModalPresence.mounted &&
+        createPortal(
+          <div
+            className="onboarding-modal-overlay"
+            data-state={onboardingModalPresence.state}
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("profile.title")}
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) void skipAndCloseOnboardingModal();
+            }}
+          >
+            <div className="onboarding-modal-card">
+              <button type="button" className="popover-close onboarding-modal-close" aria-label={t("common.close")} onClick={() => void skipAndCloseOnboardingModal()}>
+                <CloseIcon />
+              </button>
+              <ProfileOnboardingPanel user={user} setUser={setUser} onFinished={dismissOnboardingModal} completeOnSkip />
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -1206,10 +1500,12 @@ function ProfileEditDetailShell({
   children: ReactNode;
   onLogout: () => void;
 }) {
+  const { t } = useI18n();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [pictureModalOpen, setPictureModalOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const accountMenuPresence = useMotionPresence(accountMenuOpen, MOTION_FAST_MS);
+  const pictureModalPresence = useMotionPresence(pictureModalOpen, MOTION_BASE_MS);
 
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
@@ -1252,7 +1548,7 @@ function ProfileEditDetailShell({
         <div className="account-menu" ref={accountMenuRef}>
           <button
             className="avatar-button"
-            aria-label="Open account menu"
+            aria-label={t("account.openAccountMenu")}
             aria-expanded={accountMenuOpen}
             onClick={() => setAccountMenuOpen((open) => !open)}
           >
@@ -1260,24 +1556,24 @@ function ProfileEditDetailShell({
           </button>
           {accountMenuPresence.mounted && (
             <div className="account-popover profile-edit-account-popover" role="menu" data-state={accountMenuPresence.state}>
-              <button className="popover-close" aria-label="Close account menu" onClick={() => setAccountMenuOpen(false)}>
+              <button className="popover-close" aria-label={t("common.close")} onClick={() => setAccountMenuOpen(false)}>
                 <CloseIcon />
               </button>
               <div className="account-popover-email">{user.email}</div>
               <div className="account-popover-avatar">
                 <Avatar user={user} />
-                <button aria-label="Manage profile image" onClick={openProfilePictureModal}>
+                <button aria-label={t("avatar.change")} onClick={openProfilePictureModal}>
                   <CameraIcon />
                 </button>
               </div>
-              <h2>Hi, {user.display_name}!</h2>
+              <h2>{t("account.greeting", { name: user.display_name })}</h2>
               <button className="account-manage-button" onClick={() => navigateConsole("profile")}>
-                Manage your {PRODUCT_NAME}
+                {t("account.manage", { product: PRODUCT_NAME })}
               </button>
               <div className="account-popover-actions">
-                <button onClick={onLogout}>Sign out</button>
+                <button onClick={onLogout}>{t("common.signOut")}</button>
               </div>
-              <div className="account-popover-footer">Profile details and sign-in protection stay private to you.</div>
+              <div className="account-popover-footer">{t("account.popoverFooter")}</div>
             </div>
           )}
         </div>
@@ -1285,19 +1581,20 @@ function ProfileEditDetailShell({
 
       <section key={title} className="profile-edit-stage motion-page" data-state="open">
         <div className="profile-edit-header">
-          <button className="profile-edit-back" aria-label="Back to personal info" onClick={() => go("profile")}>
+          <button className="profile-edit-back" aria-label={t("profile.backToPersonalInfo")} onClick={() => go("profile")}>
             <BackIcon />
           </button>
           <h1>{title}</h1>
         </div>
         {children}
       </section>
-      {pictureModalOpen && (
+      {pictureModalPresence.mounted && (
         <div
           className="picture-modal-overlay"
+          data-state={pictureModalPresence.state}
           role="dialog"
           aria-modal="true"
-          aria-label="Change profile picture"
+          aria-label={t("avatar.change")}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setPictureModalOpen(false);
           }}
@@ -1318,6 +1615,25 @@ function AuthBrand() {
   );
 }
 
+function LanguageSwitcher({ className = "" }: { className?: string }) {
+  const { language, setLanguage, t } = useI18n();
+  return (
+    <div className={`language-switcher ${className}`} aria-label={t("common.language")}>
+      {LANGUAGE_OPTIONS.map((option) => (
+        <button
+          type="button"
+          key={option.value}
+          className={language === option.value ? "active" : ""}
+          aria-pressed={language === option.value}
+          onClick={() => setLanguage(option.value)}
+        >
+          {option.shortLabel}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Avatar({ user }: { user: User | null }) {
   if (user?.avatar_url) {
     return <img className="avatar" src={user.avatar_url} alt={`${user.display_name} avatar`} />;
@@ -1325,29 +1641,343 @@ function Avatar({ user }: { user: User | null }) {
   return <div className="avatar avatar-fallback">{userInitials(user)}</div>;
 }
 
+function LauncherAppIcon({ app }: { app: LauncherApp }) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  if (app.icon_url && !imageFailed) {
+    return (
+      <span className="launcher-app-icon launcher-app-image">
+        <img src={app.icon_url} alt="" draggable="false" onError={() => setImageFailed(true)} />
+      </span>
+    );
+  }
+
+  return (
+    <span className="launcher-app-icon launcher-app-fallback" aria-hidden="true">
+      {appInitials(app.name)}
+    </span>
+  );
+}
+
+// ###############################################
+// Legal Pages
+// ###############################################
+
+function LegalIllustration() {
+  return (
+    <div className="legal-illustration" aria-hidden="true">
+      <svg viewBox="0 0 360 180" focusable="false">
+        <path className="legal-illustration-line" d="M46 122c23-42 60-55 111-39 45 14 77 4 102-30" />
+        <path className="legal-illustration-shield" d="M180 34 231 52v41c0 35-17 59-51 74-34-15-51-39-51-74V52l51-18Z" />
+        <path className="legal-illustration-g" d="M197 85h-27v22h49c-5 18-20 30-40 30-28 0-51-22-51-50s23-50 51-50c13 0 25 5 34 13l-18 18c-4-4-10-7-16-7-14 0-26 12-26 26s12 26 26 26c9 0 17-4 22-11h-22V85h18Z" />
+        <rect className="legal-illustration-card" x="49" y="99" width="78" height="49" rx="8" />
+        <path className="legal-illustration-line" d="M67 124h42M67 137h28" />
+        <circle className="legal-illustration-dot" cx="282" cy="75" r="18" />
+        <path className="legal-illustration-line" d="M282 93v40M263 133h38" />
+        <rect className="legal-illustration-toggle" x="247" y="105" width="64" height="34" rx="17" />
+        <circle className="legal-illustration-toggle-dot" cx="264" cy="122" r="12" />
+      </svg>
+    </div>
+  );
+}
+
+function LegalDocumentPage({ route }: { route: LegalRoute }) {
+  const content = LEGAL_CONTENT[route];
+
+  return (
+    <section className="legal-page">
+      <header className="legal-document-header">
+        <h1>GozilaSim Privacy &amp; Terms</h1>
+        <nav className="legal-tabs" aria-label="Legal pages">
+          {LEGAL_NAV.map((item) => (
+            <button
+              key={item.route}
+              className={`legal-tab${item.route === route ? " legal-tab-active" : ""}`}
+              aria-current={item.route === route ? "page" : undefined}
+              onClick={() => go(item.route)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </header>
+
+      <div className="legal-document-grid">
+        <aside className="legal-toc" aria-label={`${content.documentLabel} sections`}>
+          <nav>
+            {content.toc.map((item, index) => (
+              <a
+                key={item}
+                className={`legal-toc-link${index === 0 ? " legal-toc-link-active" : ""}`}
+                href={`#legal-section-${route}-${index}`}
+              >
+                {item}
+              </a>
+            ))}
+          </nav>
+        </aside>
+
+        <article className="legal-article">
+          <LegalIllustration />
+          <div className="legal-article-copy">
+            <p className="legal-kicker">{content.documentLabel}</p>
+            <h2 id={`legal-section-${route}-0`}>{content.headline}</h2>
+            <p>{content.body}</p>
+          </div>
+
+          <div className="legal-highlight-list">
+            {content.highlights.map((item, index) => (
+              <section id={`legal-section-${route}-${index + 1}`} className="legal-highlight" key={item.title}>
+                <h3>{item.title}</h3>
+                <p>{item.text}</p>
+              </section>
+            ))}
+          </div>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function LegalShell({
+  user,
+  setUser,
+  route,
+  onLogout
+}: {
+  user: User;
+  setUser: (user: User) => void;
+  route: LegalRoute;
+  onLogout: () => void;
+}) {
+  const { t } = useI18n();
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [appsLauncherOpen, setAppsLauncherOpen] = useState(false);
+  const [pictureModalOpen, setPictureModalOpen] = useState(false);
+  const [launcherApps, setLauncherApps] = useState<LauncherApp[]>([]);
+  const [launcherLoaded, setLauncherLoaded] = useState(false);
+  const [launcherLoading, setLauncherLoading] = useState(false);
+  const [launcherError, setLauncherError] = useState<string | null>(null);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+  const appsLauncherRef = useRef<HTMLDivElement>(null);
+  const accountMenuPresence = useMotionPresence(accountMenuOpen, MOTION_FAST_MS);
+  const appsLauncherPresence = useMotionPresence(appsLauncherOpen, MOTION_FAST_MS);
+  const pictureModalPresence = useMotionPresence(pictureModalOpen, MOTION_BASE_MS);
+
+  const loadLauncherApps = useCallback(async () => {
+    setLauncherLoading(true);
+    setLauncherError(null);
+    try {
+      setLauncherApps(await api.listLauncherApps());
+    } catch (err) {
+      setLauncherError(err instanceof ApiError ? err.message : t("account.appsLoadFailed"));
+    } finally {
+      setLauncherLoaded(true);
+      setLauncherLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setAccountMenuOpen(false);
+        setAppsLauncherOpen(false);
+      }
+    }
+
+    function closeOnOutsideClick(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (accountMenuRef.current && !accountMenuRef.current.contains(target)) {
+        setAccountMenuOpen(false);
+      }
+      if (appsLauncherRef.current && !appsLauncherRef.current.contains(target)) {
+        setAppsLauncherOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (appsLauncherOpen && !launcherLoaded) {
+      void loadLauncherApps();
+    }
+  }, [appsLauncherOpen, launcherLoaded, loadLauncherApps]);
+
+  const navigateAccount = () => {
+    setAccountMenuOpen(false);
+    setAppsLauncherOpen(false);
+    go("account");
+  };
+
+  const navigateProfile = () => {
+    setAccountMenuOpen(false);
+    setAppsLauncherOpen(false);
+    go("profile");
+  };
+
+  const openProfilePictureModal = () => {
+    setAccountMenuOpen(false);
+    setAppsLauncherOpen(false);
+    setPictureModalOpen(true);
+  };
+
+  const openLauncherApp = (app: LauncherApp) => {
+    setAccountMenuOpen(false);
+    setAppsLauncherOpen(false);
+    window.location.href = app.launch_url || app.home_url;
+  };
+
+  return (
+    <main className="legal-shell">
+      <header className="legal-topbar">
+        <button className="brand legal-brand" onClick={navigateAccount}>
+          <LogoMark />
+          <span>{PRODUCT_NAME}</span>
+        </button>
+
+        <div className="legal-topbar-actions">
+          <div className="apps-menu" ref={appsLauncherRef}>
+            <button
+              className="icon-button"
+              aria-label={t("account.openApps")}
+              aria-expanded={appsLauncherOpen}
+              onClick={() => {
+                setAppsLauncherOpen((open) => !open);
+                setAccountMenuOpen(false);
+              }}
+            >
+              <GridIcon />
+            </button>
+            {appsLauncherPresence.mounted && (
+              <div className="apps-popover" role="dialog" aria-label={t("account.appsLauncher")} data-state={appsLauncherPresence.state}>
+                <div className="apps-launcher-panel">
+                  <div className="apps-launcher-header">
+                    <h2>{t("account.favourites")}</h2>
+                    <button className="apps-edit-button" aria-label={t("account.editFavourites")} disabled>
+                      <PencilIcon />
+                    </button>
+                  </div>
+                  <div className="apps-launcher-body">
+                    <div className="apps-grid">
+                      <button className="launcher-app-tile" onClick={navigateAccount}>
+                        <span className="launcher-app-icon launcher-account-icon">
+                          <Avatar user={user} />
+                        </span>
+                        <span className="launcher-app-name">{t("common.account")}</span>
+                      </button>
+                      {launcherApps.map((app) => (
+                        <button
+                          key={app.client_id}
+                          className="launcher-app-tile"
+                          onClick={() => openLauncherApp(app)}
+                          title={app.name}
+                        >
+                          <LauncherAppIcon app={app} />
+                          <span className="launcher-app-name">{app.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {launcherLoading && <div className="launcher-inline-state">{t("account.appsLoading")}</div>}
+                    {launcherError && <div className="launcher-inline-state launcher-inline-error">{launcherError}</div>}
+                    {!launcherLoading && !launcherError && launcherLoaded && launcherApps.length === 0 && (
+                      <div className="launcher-inline-state">{t("account.noConnectedApps")}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="account-menu" ref={accountMenuRef}>
+            <button
+              className="avatar-button"
+              aria-label={t("account.openAccountMenu")}
+              aria-expanded={accountMenuOpen}
+              onClick={() => {
+                setAccountMenuOpen((open) => !open);
+                setAppsLauncherOpen(false);
+              }}
+            >
+              <Avatar user={user} />
+            </button>
+            {accountMenuPresence.mounted && (
+              <div className="account-popover" role="menu" data-state={accountMenuPresence.state}>
+                <button className="popover-close" aria-label={t("common.close")} onClick={() => setAccountMenuOpen(false)}>
+                  <CloseIcon />
+                </button>
+                <div className="account-popover-email">{user.email}</div>
+                <div className="account-popover-avatar">
+                  <Avatar user={user} />
+                  <button aria-label={t("avatar.change")} onClick={openProfilePictureModal}>
+                    <CameraIcon />
+                  </button>
+                </div>
+                <h2>{t("account.greeting", { name: user.display_name })}</h2>
+                <button className="account-manage-button" onClick={navigateProfile}>
+                  {t("account.manage", { product: PRODUCT_NAME })}
+                </button>
+                <div className="account-popover-actions">
+                  <button onClick={onLogout}>{t("common.signOut")}</button>
+                </div>
+                <div className="account-popover-footer">{t("account.popoverFooter")}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <LegalDocumentPage route={route} />
+
+      {pictureModalPresence.mounted && (
+        <div
+          className="picture-modal-overlay"
+          data-state={pictureModalPresence.state}
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("avatar.change")}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPictureModalOpen(false);
+          }}
+        >
+          <ProfilePictureModal user={user} setUser={setUser} onClose={() => setPictureModalOpen(false)} />
+        </div>
+      )}
+    </main>
+  );
+}
+
 function AuthLayout({ children, backgroundSrc }: { children: ReactNode; backgroundSrc: string }) {
+  const { t } = useI18n();
   return (
     <main className="auth-page">
       <AuthWallpaper videoSrc={backgroundSrc} />
       <header className="auth-header">
         <AuthBrand />
+        <LanguageSwitcher className="auth-language-switcher" />
       </header>
       <section className="auth-layout">
         <div className="auth-copy">
-          <h1>Access your workspace with one account.</h1>
-          <p>Manage your profile, password, and sign-in protection from one quiet place.</p>
+          <h1>{t("auth.heroTitle")}</h1>
+          <p>{t("auth.heroBody")}</p>
           <div className="auth-summary">
             <div className="auth-summary-item">
-              <strong>Account details</strong>
-              <span>Keep your name and image current across the apps you use.</span>
+              <strong>{t("auth.summaryAccountTitle")}</strong>
+              <span>{t("auth.summaryAccountBody")}</span>
             </div>
             <div className="auth-summary-item">
-              <strong>Sign-in protection</strong>
-              <span>Extra verification appears only when your account needs it.</span>
+              <strong>{t("auth.summarySecurityTitle")}</strong>
+              <span>{t("auth.summarySecurityBody")}</span>
             </div>
             <div className="auth-summary-item">
-              <strong>Connected access</strong>
-              <span>Move between your apps with the same secure account.</span>
+              <strong>{t("auth.summaryAccessTitle")}</strong>
+              <span>{t("auth.summaryAccessBody")}</span>
             </div>
           </div>
         </div>
@@ -1358,23 +1988,25 @@ function AuthLayout({ children, backgroundSrc }: { children: ReactNode; backgrou
 }
 
 function StandaloneAccessState({ loading, backgroundSrc }: { loading: boolean; backgroundSrc: string }) {
+  const { t } = useI18n();
   return (
     <main className="auth-page auth-state-page">
       <AuthWallpaper videoSrc={backgroundSrc} />
       <header className="auth-header">
         <AuthBrand />
+        <LanguageSwitcher className="auth-language-switcher" />
       </header>
       <section className="auth-state">
         <div className="panel empty-state">
-          <h2>{loading ? "Loading account..." : "Sign in required"}</h2>
+          <h2>{loading ? t("auth.loadingAccount") : t("auth.signInRequired")}</h2>
           <p>
             {loading
-              ? "Checking whether you already have an active session."
-              : `Sign in to ${PRODUCT_NAME} to view this page.`}
+              ? t("auth.checkingSession")
+              : t("auth.signInRequiredBody", { product: PRODUCT_NAME })}
           </p>
           {!loading && (
             <button className="primary" onClick={() => go("login")}>
-              Sign in
+              {t("common.signIn")}
             </button>
           )}
         </div>
@@ -1387,13 +2019,17 @@ function BackgroundPickerModal({
   selectedSrc,
   onSelect,
   onReset,
-  onClose
+  onClose,
+  motionState
 }: {
   selectedSrc: string;
   onSelect: (src: string) => void;
   onReset: () => void;
   onClose: () => void;
+  motionState: MotionPresenceState;
 }) {
+  const { t } = useI18n();
+
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -1406,9 +2042,10 @@ function BackgroundPickerModal({
   return (
     <div
       className="background-picker-overlay"
+      data-state={motionState}
       role="dialog"
       aria-modal="true"
-      aria-label="Login background picker"
+      aria-label={t("theme.bgPickerTitle")}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -1416,10 +2053,10 @@ function BackgroundPickerModal({
       <section className="background-picker-card">
         <header className="background-picker-header">
           <div>
-            <h2>Login background</h2>
-            <p>Saved on this browser only.</p>
+            <h2>{t("theme.bgPickerTitle")}</h2>
+            <p>{t("theme.savedLocal")}</p>
           </div>
-          <button type="button" className="theme-close" aria-label="Close background picker" onClick={onClose}>
+          <button type="button" className="theme-close" aria-label={t("theme.bgPickerClose")} onClick={onClose}>
             <CloseIcon />
           </button>
         </header>
@@ -1432,7 +2069,7 @@ function BackgroundPickerModal({
                 type="button"
                 key={option.id}
                 className={`background-choice${selected ? " background-choice-selected" : ""}`}
-                aria-label={`Background option ${index + 1}`}
+                aria-label={t("theme.bgOption", { number: index + 1 })}
                 aria-pressed={selected}
                 onClick={() => onSelect(option.src)}
               >
@@ -1449,7 +2086,7 @@ function BackgroundPickerModal({
 
         <div className="background-picker-actions">
           <button type="button" className="secondary" onClick={onReset}>
-            Reset
+            {t("theme.bgReset")}
           </button>
         </div>
       </section>
@@ -1472,10 +2109,12 @@ function ThemeCustomizer({
   onLoginBackgroundChange: (src: string) => void;
   onLoginBackgroundReset: () => void;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const customizerRef = useRef<HTMLDivElement>(null);
   const panelPresence = useMotionPresence(open, MOTION_FAST_MS);
+  const backgroundPickerPresence = useMotionPresence(backgroundPickerOpen, MOTION_BASE_MS);
 
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
@@ -1509,13 +2148,13 @@ function ThemeCustomizer({
   return (
     <div className="theme-customizer" ref={customizerRef}>
       {panelPresence.mounted && (
-        <section className="theme-panel" aria-label="Customize theme" data-state={panelPresence.state}>
+        <section className="theme-panel" aria-label={t("theme.customize")} data-state={panelPresence.state}>
           <div className="theme-panel-header">
             <div>
-              <h2>Customize theme</h2>
-              <p>Saved on this browser only.</p>
+              <h2>{t("theme.customize")}</h2>
+              <p>{t("theme.savedLocal")}</p>
             </div>
-            <button type="button" className="theme-close" aria-label="Close theme customizer" onClick={() => setOpen(false)}>
+            <button type="button" className="theme-close" aria-label={t("theme.close")} onClick={() => setOpen(false)}>
               <CloseIcon />
             </button>
           </div>
@@ -1524,13 +2163,13 @@ function ThemeCustomizer({
             {THEME_FIELDS.map((field) => (
               <label className="theme-color-row" key={field.key}>
                 <span>
-                  <strong>{field.label}</strong>
-                  <small>{field.description}</small>
+                  <strong>{t(field.labelKey)}</strong>
+                  <small>{t(field.descriptionKey)}</small>
                 </span>
                 <input
                   type="color"
                   value={theme[field.key]}
-                  aria-label={`${field.label} color`}
+                  aria-label={t(field.labelKey)}
                   onChange={(event) => updateColor(field.key, event.target.value)}
                 />
                 <code>{theme[field.key]}</code>
@@ -1540,26 +2179,27 @@ function ThemeCustomizer({
 
           <div className="theme-actions">
             <button type="button" className="secondary" onClick={() => setBackgroundPickerOpen(true)}>
-              Login background
+              {t("theme.background")}
             </button>
             <button type="button" className="secondary" onClick={onReset}>
-              Reset theme
+              {t("theme.reset")}
             </button>
           </div>
         </section>
       )}
-      {backgroundPickerOpen && (
+      {backgroundPickerPresence.mounted && (
         <BackgroundPickerModal
           selectedSrc={loginBackgroundSrc}
           onSelect={onLoginBackgroundChange}
           onReset={onLoginBackgroundReset}
           onClose={() => setBackgroundPickerOpen(false)}
+          motionState={backgroundPickerPresence.state}
         />
       )}
       <button
         type="button"
         className="theme-fab"
-        aria-label="Customize theme"
+        aria-label={t("theme.customize")}
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
@@ -1574,6 +2214,7 @@ function ThemeCustomizer({
 // ###############################################
 
 function RegisterPage({ onAuthenticated, backgroundSrc }: { onAuthenticated: AuthenticatedHandler; backgroundSrc: string }) {
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
@@ -1589,7 +2230,7 @@ function RegisterPage({ onAuthenticated, backgroundSrc }: { onAuthenticated: Aut
       const response = await api.register({ email, display_name: displayName, password });
       setSetup(response.mfa_setup);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Registration failed.");
+      setError(err instanceof ApiError ? err.message : t("register.failed"));
     } finally {
       setBusy(false);
     }
@@ -1598,24 +2239,24 @@ function RegisterPage({ onAuthenticated, backgroundSrc }: { onAuthenticated: Aut
   return (
     <AuthLayout backgroundSrc={backgroundSrc}>
       {setup ? (
-        <MfaSetupPanel setup={setup} onAuthenticated={(user) => onAuthenticated(user, { showOnboarding: true })} />
+        <MfaSetupPanel setup={setup} onAuthenticated={onAuthenticated} />
       ) : (
         <>
           <div className="panel-header">
-            <h2>Create account</h2>
-            <p>Set up your profile and add extra sign-in protection before you continue.</p>
+            <h2>{t("register.title")}</h2>
+            <p>{t("register.body")}</p>
           </div>
           <form onSubmit={submit} className="form-stack">
-            <Field label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" />
-            <Field label="Display name" value={displayName} onChange={setDisplayName} autoComplete="name" />
-            <Field label="Password" type="password" value={password} onChange={setPassword} autoComplete="new-password" />
+            <Field label={t("common.email")} type="email" value={email} onChange={setEmail} autoComplete="email" />
+            <Field label={t("common.displayName")} value={displayName} onChange={setDisplayName} autoComplete="name" />
+            <Field label={t("common.password")} type="password" value={password} onChange={setPassword} autoComplete="new-password" />
             <Alert message={error} />
             <button className="primary" disabled={busy}>
-              {busy ? "Creating..." : "Create account"}
+              {busy ? t("register.busy") : t("register.submit")}
             </button>
           </form>
           <button className="link-button" onClick={() => go("login")}>
-            Already have an account? Sign in
+            {t("register.haveAccount")}
           </button>
         </>
       )}
@@ -1624,6 +2265,7 @@ function RegisterPage({ onAuthenticated, backgroundSrc }: { onAuthenticated: Aut
 }
 
 function LoginPage({ onAuthenticated, backgroundSrc }: { onAuthenticated: AuthenticatedHandler; backgroundSrc: string }) {
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mfaChallenge, setMfaChallenge] = useState<string | null>(null);
@@ -1652,7 +2294,7 @@ function LoginPage({ onAuthenticated, backgroundSrc }: { onAuthenticated: Authen
     try {
       handleLoginResponse(await api.login({ email, password }));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Login failed.");
+      setError(err instanceof ApiError ? err.message : t("login.failed"));
     } finally {
       setBusy(false);
     }
@@ -1667,23 +2309,23 @@ function LoginPage({ onAuthenticated, backgroundSrc }: { onAuthenticated: Authen
       ) : (
         <>
           <div className="panel-header">
-            <h2>Sign in</h2>
-            <p>Use your email and password to continue.</p>
+            <h2>{t("login.title")}</h2>
+            <p>{t("login.body")}</p>
           </div>
           <form onSubmit={submit} className="form-stack">
-            <Field label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" />
-            <Field label="Password" type="password" value={password} onChange={setPassword} autoComplete="current-password" />
+            <Field label={t("common.email")} type="email" value={email} onChange={setEmail} autoComplete="email" />
+            <Field label={t("common.password")} type="password" value={password} onChange={setPassword} autoComplete="current-password" />
             <Alert message={error} />
             <button className="primary" disabled={busy}>
-              {busy ? "Checking..." : "Sign in"}
+              {busy ? t("login.busy") : t("login.submit")}
             </button>
           </form>
           <div className="link-stack">
             <button className="link-button" onClick={() => go("forgot-password")}>
-              Forgot password?
+              {t("login.forgot")}
             </button>
             <button className="link-button" onClick={() => go("register")}>
-              Need an account? Register
+              {t("login.needAccount")}
             </button>
           </div>
         </>
@@ -1701,6 +2343,7 @@ function OAuthAuthorizeLayout({
   children: ReactNode;
   backgroundSrc: string;
 }) {
+  const { t } = useI18n();
   return (
     <main className="oauth-page">
       <AuthWallpaper videoSrc={backgroundSrc} />
@@ -1710,15 +2353,16 @@ function OAuthAuthorizeLayout({
             <LogoMark />
             <span>{PRODUCT_NAME}</span>
           </div>
+          <LanguageSwitcher className="oauth-language-switcher" />
           <div className="oauth-context">
-            <span>Continue to</span>
-            <strong>{context?.client_name ?? "connected app"}</strong>
+            <span>{t("oauth.continueTo")}</span>
+            <strong>{context?.client_name ?? t("oauth.connectedApp")}</strong>
           </div>
         </header>
         {context && (
-          <div className="oauth-scopes" aria-label="Requested access">
+          <div className="oauth-scopes" aria-label={t("oauth.requestedAccess")}>
             {context.scopes.map((scope) => (
-              <span key={scope}>{oauthScopeLabel(scope)}</span>
+              <span key={scope}>{oauthScopeLabel(scope, t)}</span>
             ))}
           </div>
         )}
@@ -1739,6 +2383,7 @@ function OAuthAuthorizePage({
   onAuthenticated: AuthenticatedHandler;
   backgroundSrc: string;
 }) {
+  const { t } = useI18n();
   const next = nextUrl();
   const authorizeRequest = useMemo(() => parseAuthorizeRequest(next), [next]);
   const [context, setContext] = useState<AuthorizeContext | null>(null);
@@ -1759,7 +2404,7 @@ function OAuthAuthorizePage({
       setContext(null);
       setContextError(null);
       if (!authorizeRequest) {
-        setContextError("This sign-in request is missing required OAuth details.");
+        setContextError(t("oauth.missingDetails"));
         return;
       }
 
@@ -1771,13 +2416,13 @@ function OAuthAuthorizePage({
         });
         if (active) setContext(response);
       } catch (err) {
-        if (active) setContextError(err instanceof ApiError ? err.message : "Could not load sign-in request.");
+        if (active) setContextError(err instanceof ApiError ? err.message : t("oauth.loadFailed"));
       }
     }
 
     loadContext();
     return () => { active = false; };
-  }, [authorizeRequest]);
+  }, [authorizeRequest, t]);
 
   function continueToAuthorize() {
     if (authorizeRequest) window.location.href = authorizeRequest.next;
@@ -1804,7 +2449,7 @@ function OAuthAuthorizePage({
     try {
       handleLoginResponse(await api.login({ email, password }));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Login failed.");
+      setError(err instanceof ApiError ? err.message : t("login.failed"));
     } finally {
       setBusy(false);
     }
@@ -1818,7 +2463,7 @@ function OAuthAuthorizePage({
       const response = await api.register({ email, display_name: displayName, password });
       setSetup(response.mfa_setup);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Registration failed.");
+      setError(err instanceof ApiError ? err.message : t("register.failed"));
     } finally {
       setBusy(false);
     }
@@ -1827,9 +2472,9 @@ function OAuthAuthorizePage({
   return (
     <OAuthAuthorizeLayout context={context} backgroundSrc={backgroundSrc}>
       <Alert message={contextError} />
-      {!context && !contextError && <Alert message="Loading sign-in request..." tone="info" />}
+      {!context && !contextError && <Alert message={t("oauth.loadingRequest")} tone="info" />}
       {loading ? (
-        <Alert message="Checking your Portal session..." tone="info" />
+        <Alert message={t("oauth.checkingPortalSession")} tone="info" />
       ) : user ? (
         <div className="oauth-signed-in">
           <Avatar user={user} />
@@ -1838,7 +2483,7 @@ function OAuthAuthorizePage({
             <span>{user.email}</span>
           </div>
           <button className="primary full" onClick={continueToAuthorize} disabled={!authorizeRequest || !context || Boolean(contextError)}>
-            Continue
+            {t("oauth.continueButton")}
           </button>
         </div>
       ) : setup ? (
@@ -1848,42 +2493,42 @@ function OAuthAuthorizePage({
       ) : mode === "register" ? (
         <>
           <div className="panel-header">
-            <h2>Create Portal account</h2>
-            <p>Set up your account, then continue to {context?.client_name ?? "the connected app"}.</p>
+            <h2>{t("oauth.createTitle")}</h2>
+            <p>{t("oauth.createBody", { app: context?.client_name ?? t("oauth.connectedApp") })}</p>
           </div>
           <form onSubmit={submitRegister} className="form-stack">
-            <Field label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" />
-            <Field label="Display name" value={displayName} onChange={setDisplayName} autoComplete="name" />
-            <Field label="Password" type="password" value={password} onChange={setPassword} autoComplete="new-password" />
+            <Field label={t("common.email")} type="email" value={email} onChange={setEmail} autoComplete="email" />
+            <Field label={t("common.displayName")} value={displayName} onChange={setDisplayName} autoComplete="name" />
+            <Field label={t("common.password")} type="password" value={password} onChange={setPassword} autoComplete="new-password" />
             <Alert message={error} />
             <button className="primary" disabled={busy || !context || Boolean(contextError)}>
-              {busy ? "Creating..." : "Create and continue"}
+              {busy ? t("register.busy") : t("oauth.createSubmit")}
             </button>
           </form>
           <button className="link-button" onClick={() => setMode("login")}>
-            Already have an account? Sign in
+            {t("register.haveAccount")}
           </button>
         </>
       ) : (
         <>
           <div className="panel-header">
-            <h2>Sign in with Portal</h2>
-            <p>Use your {PRODUCT_NAME} account to continue.</p>
+            <h2>{t("oauth.signInTitle")}</h2>
+            <p>{t("oauth.signInBody", { product: PRODUCT_NAME })}</p>
           </div>
           <form onSubmit={submitLogin} className="form-stack">
-            <Field label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" />
-            <Field label="Password" type="password" value={password} onChange={setPassword} autoComplete="current-password" />
+            <Field label={t("common.email")} type="email" value={email} onChange={setEmail} autoComplete="email" />
+            <Field label={t("common.password")} type="password" value={password} onChange={setPassword} autoComplete="current-password" />
             <Alert message={error} />
             <button className="primary" disabled={busy || !context || Boolean(contextError)}>
-              {busy ? "Checking..." : "Sign in and continue"}
+              {busy ? t("login.busy") : t("oauth.signInSubmit")}
             </button>
           </form>
           <div className="link-stack">
             <button className="link-button" onClick={() => navigateWithNext("forgot-password", next)}>
-              Forgot password?
+              {t("login.forgot")}
             </button>
             <button className="link-button" onClick={() => setMode("register")}>
-              Need an account? Register
+              {t("login.needAccount")}
             </button>
           </div>
         </>
@@ -1893,6 +2538,7 @@ function OAuthAuthorizePage({
 }
 
 function ForgotPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [resetLink, setResetLink] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -1910,7 +2556,7 @@ function ForgotPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
       setMessage(response.message);
       setResetLink(response.reset_link ?? null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Password reset request failed.");
+      setError(err instanceof ApiError ? err.message : t("forgot.failed"));
     } finally {
       setBusy(false);
     }
@@ -1919,33 +2565,34 @@ function ForgotPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
   return (
     <AuthLayout backgroundSrc={backgroundSrc}>
       <div className="panel-header">
-        <h2>Reset password</h2>
-        <p>Enter your email and continue with the reset link.</p>
+        <h2>{t("forgot.title")}</h2>
+        <p>{t("forgot.body")}</p>
       </div>
       <form onSubmit={submit} className="form-stack">
-        <Field label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" />
+        <Field label={t("common.email")} type="email" value={email} onChange={setEmail} autoComplete="email" />
         <Alert message={error} />
         <Alert message={message} tone="success" />
         {resetLink && (
           <div className="dev-reset-link">
-            <span>Dev reset link</span>
+            <span>{t("forgot.devLink")}</span>
             <button type="button" onClick={() => { window.location.href = resetLink; }}>
               {resetLink}
             </button>
           </div>
         )}
         <button className="primary" disabled={busy}>
-          {busy ? "Preparing..." : "Send reset link"}
+          {busy ? t("forgot.busy") : t("forgot.submit")}
         </button>
       </form>
       <button className="link-button" onClick={() => go("login")}>
-        Back to sign in
+        {t("common.backToSignIn")}
       </button>
     </AuthLayout>
   );
 }
 
 function ResetPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
+  const { t } = useI18n();
   const token = resetToken();
   const [inspect, setInspect] = useState<ResetPasswordInspectResponse | null>(null);
   const [loadingInspect, setLoadingInspect] = useState(true);
@@ -1973,7 +2620,7 @@ function ResetPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
         const response = await api.inspectPasswordReset({ token });
         if (active) setInspect(response);
       } catch (err) {
-        if (active) setError(err instanceof ApiError ? err.message : "Could not inspect reset link.");
+        if (active) setError(err instanceof ApiError ? err.message : t("reset.inspectFailed"));
       } finally {
         if (active) setLoadingInspect(false);
       }
@@ -1981,18 +2628,18 @@ function ResetPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
 
     inspectToken();
     return () => { active = false; };
-  }, [token]);
+  }, [token, t]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!token || !inspect?.valid) return;
     if (newPassword !== confirmPassword) {
-      setError("Passwords do not match.");
+      setError(t("reset.passwordMismatch"));
       return;
     }
     const normalizedMfaCode = optionalText(mfaCode);
     if (inspect.mfa_required && !normalizedMfaCode) {
-      setError("Enter the current verification code.");
+      setError(t("reset.mfaRequired"));
       return;
     }
     setBusy(true);
@@ -2007,9 +2654,9 @@ function ResetPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
       setNewPassword("");
       setConfirmPassword("");
       setMfaCode("");
-      setMessage("Password reset. You can sign in now.");
+      setMessage(t("reset.success"));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Password reset failed.");
+      setError(err instanceof ApiError ? err.message : t("reset.failed"));
     } finally {
       setBusy(false);
     }
@@ -2018,38 +2665,38 @@ function ResetPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
   return (
     <AuthLayout backgroundSrc={backgroundSrc}>
       <div className="panel-header">
-        <h2>Choose a new password</h2>
-        <p>Enter and confirm a new password for your {PRODUCT_NAME} account.</p>
+        <h2>{t("reset.title")}</h2>
+        <p>{t("reset.body", { product: PRODUCT_NAME })}</p>
       </div>
       {loadingInspect ? (
-        <Alert message="Checking reset link..." tone="info" />
+        <Alert message={t("reset.checking")} tone="info" />
       ) : !inspect?.valid ? (
         <>
-          <Alert message="This reset link is invalid, expired, or already used." />
+          <Alert message={t("reset.invalid")} />
           <button className="link-button" onClick={() => go("forgot-password")}>
-            Request a new reset link
+            {t("reset.requestNew")}
           </button>
         </>
       ) : message ? (
         <>
           <Alert message={message} tone="success" />
           <button className="primary" onClick={() => go("login")}>
-            Sign in
+            {t("common.signIn")}
           </button>
         </>
       ) : (
         <form onSubmit={submit} className="form-stack">
-          <Field label="New password" type="password" value={newPassword} onChange={setNewPassword} autoComplete="new-password" />
-          <Field label="Confirm password" type="password" value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" />
+          <Field label={t("common.newPassword")} type="password" value={newPassword} onChange={setNewPassword} autoComplete="new-password" />
+          <Field label={t("reset.confirmPassword")} type="password" value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" />
           {inspect.mfa_required && (
             <>
-              <Field label="Authenticator code" value={mfaCode} onChange={setMfaCode} autoComplete="one-time-code" />
-              <div className="field-help">Use the current code from your verification app.</div>
+              <Field label={t("common.authenticatorCode")} value={mfaCode} onChange={setMfaCode} autoComplete="one-time-code" />
+              <div className="field-help">{t("reset.mfaHelp")}</div>
             </>
           )}
           <Alert message={error} />
           <button className="primary" disabled={busy}>
-            {busy ? "Resetting..." : "Reset password"}
+            {busy ? t("reset.busy") : t("reset.submit")}
           </button>
         </form>
       )}
@@ -2061,7 +2708,16 @@ function ResetPasswordPage({ backgroundSrc }: { backgroundSrc: string }) {
 // Verification Screens
 // ###############################################
 
+async function confirmedSessionUser(t: I18nContextValue["t"]) {
+  try {
+    return await api.me();
+  } catch {
+    throw new Error(t("mfa.sessionConfirmFailed"));
+  }
+}
+
 function MfaSetupPanel({ setup, onAuthenticated }: { setup: MfaSetup; onAuthenticated: (user: User) => void }) {
+  const { t } = useI18n();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -2072,9 +2728,9 @@ function MfaSetupPanel({ setup, onAuthenticated }: { setup: MfaSetup; onAuthenti
     setError(null);
     try {
       const response = await api.verifyMfaSetup({ challenge_id: setup.challenge_id, code });
-      if (response.user) onAuthenticated(response.user);
+      if (response.user) onAuthenticated(await confirmedSessionUser(t));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Verification setup failed.");
+      setError(err instanceof Error ? err.message : t("mfa.setupFailed"));
     } finally {
       setBusy(false);
     }
@@ -2083,18 +2739,18 @@ function MfaSetupPanel({ setup, onAuthenticated }: { setup: MfaSetup; onAuthenti
   return (
     <>
       <div className="panel-header">
-        <h2>Set up extra verification</h2>
-        <p>Scan the QR code or enter the setup key, then submit the current verification code.</p>
+        <h2>{t("mfa.setupTitle")}</h2>
+        <p>{t("mfa.setupBody")}</p>
       </div>
       <div className="qr-wrap">
-        <img src={setup.qr_code_data_url} alt="Verification setup QR code" />
+        <img src={setup.qr_code_data_url} alt={t("mfa.qrAlt")} />
       </div>
       <div className="setup-key">{setup.manual_entry_key}</div>
       <form onSubmit={submit} className="form-stack">
-        <Field label="Verification code" value={code} onChange={setCode} autoComplete="one-time-code" />
+        <Field label={t("common.verificationCode")} value={code} onChange={setCode} autoComplete="one-time-code" />
         <Alert message={error} />
         <button className="primary" disabled={busy}>
-          {busy ? "Verifying..." : "Finish setup"}
+          {busy ? t("mfa.verifying") : t("mfa.finishSetup")}
         </button>
       </form>
     </>
@@ -2102,6 +2758,7 @@ function MfaSetupPanel({ setup, onAuthenticated }: { setup: MfaSetup; onAuthenti
 }
 
 function MfaVerifyPanel({ challengeId, onAuthenticated }: { challengeId: string; onAuthenticated: (user: User) => void }) {
+  const { t } = useI18n();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -2112,9 +2769,9 @@ function MfaVerifyPanel({ challengeId, onAuthenticated }: { challengeId: string;
     setError(null);
     try {
       const response = await api.verifyMfaLogin({ challenge_id: challengeId, code });
-      if (response.user) onAuthenticated(response.user);
+      if (response.user) onAuthenticated(await confirmedSessionUser(t));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Verification failed.");
+      setError(err instanceof Error ? err.message : t("mfa.verifyFailed"));
     } finally {
       setBusy(false);
     }
@@ -2123,14 +2780,14 @@ function MfaVerifyPanel({ challengeId, onAuthenticated }: { challengeId: string;
   return (
     <>
       <div className="panel-header">
-        <h2>Enter verification code</h2>
-        <p>Use the current code from your verification app.</p>
+        <h2>{t("mfa.verifyTitle")}</h2>
+        <p>{t("mfa.verifyBody")}</p>
       </div>
       <form onSubmit={submit} className="form-stack">
-        <Field label="Verification code" value={code} onChange={setCode} autoComplete="one-time-code" />
+        <Field label={t("common.verificationCode")} value={code} onChange={setCode} autoComplete="one-time-code" />
         <Alert message={error} />
         <button className="primary" disabled={busy}>
-          {busy ? "Verifying..." : "Verify and continue"}
+          {busy ? t("mfa.verifying") : t("mfa.verifyContinue")}
         </button>
       </form>
     </>
@@ -2141,40 +2798,40 @@ function MfaVerifyPanel({ challengeId, onAuthenticated }: { challengeId: string;
 // Profile Onboarding
 // ###############################################
 
-function onboardingCopy(field: ProfilePromptField) {
+function onboardingCopy(field: ProfilePromptField, t: I18nContextValue["t"]) {
   const copy: Record<ProfilePromptField, { title: string; label: string; helper: string; placeholder?: string; type?: string; inputMode?: "tel" | "text" }> = {
     phone_number: {
-      title: "Add your phone number",
-      label: "Phone number",
-      helper: "This is saved to your profile. SMS verification is not required yet.",
+      title: t("onboarding.phoneTitle"),
+      label: t("onboarding.phoneLabel"),
+      helper: t("onboarding.phoneHelper"),
       placeholder: "+1 555 123 4567",
       type: "tel",
       inputMode: "tel"
     },
     gender: {
-      title: "Choose a gender option",
-      label: "Gender",
-      helper: "You can skip this or change it later from profile settings."
+      title: t("onboarding.genderTitle"),
+      label: t("common.gender"),
+      helper: t("onboarding.genderHelper")
     },
     date_of_birth: {
-      title: "Add your date of birth",
-      label: "Date of birth",
-      helper: "Use the date format from your browser date picker.",
+      title: t("onboarding.birthdayTitle"),
+      label: t("onboarding.birthdayLabel"),
+      helper: t("onboarding.birthdayHelper"),
       type: "date"
     },
     first_name: {
-      title: "Add your first name",
-      label: "First name",
-      helper: "This helps apps show a more personal profile.",
-      placeholder: "First name",
+      title: t("onboarding.firstNameTitle"),
+      label: t("onboarding.firstNameLabel"),
+      helper: t("onboarding.firstNameHelper"),
+      placeholder: t("onboarding.firstNameLabel"),
       type: "text",
       inputMode: "text"
     },
     last_name: {
-      title: "Add your last name",
-      label: "Last name",
-      helper: "You can edit this later from profile settings.",
-      placeholder: "Last name",
+      title: t("onboarding.lastNameTitle"),
+      label: t("onboarding.lastNameLabel"),
+      helper: t("onboarding.lastNameHelper"),
+      placeholder: t("onboarding.lastNameLabel"),
       type: "text",
       inputMode: "text"
     }
@@ -2182,26 +2839,30 @@ function onboardingCopy(field: ProfilePromptField) {
   return copy[field];
 }
 
-function ProfileOnboardingPage({
+function ProfileOnboardingPanel({
   user,
   setUser,
   onFinished,
-  backgroundSrc
+  completeOnSkip = false
 }: {
   user: User;
   setUser: (user: User) => void;
   onFinished: () => void;
-  backgroundSrc: string;
+  completeOnSkip?: boolean;
 }) {
+  const { t } = useI18n();
   const field = user.profile_completion.next_prompt_field;
+  const genderOptions = GENDER_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }));
   const [value, setValue] = useState("");
   const [gender, setGender] = useState<GenderValue | "">("");
   const [genderCustom, setGenderCustom] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setError(null);
+    setSessionExpired(false);
     if (!field) {
       setValue("");
       return;
@@ -2224,20 +2885,30 @@ function ProfileOnboardingPage({
     onFinished();
   }
 
+  function handleOnboardingError(err: unknown, fallback: string) {
+    if (err instanceof ApiError && err.status === 401) {
+      setSessionExpired(true);
+      setError(t("onboarding.sessionExpired"));
+      return;
+    }
+    setError(err instanceof ApiError ? err.message : fallback);
+  }
+
   async function saveStep(event: FormEvent) {
     event.preventDefault();
     if (!field) return;
     setBusy(true);
     setError(null);
+    setSessionExpired(false);
     try {
       let payload: ProfileUpdatePayload;
       if (field === "gender") {
         if (!gender) {
-          setError("Choose a gender option or skip this step.");
+          setError(t("onboarding.chooseGenderError"));
           return;
         }
         if (gender === "custom" && !optionalText(genderCustom)) {
-          setError("Add a custom gender value or skip this step.");
+          setError(t("onboarding.customGenderError"));
           return;
         }
         payload = {
@@ -2247,14 +2918,14 @@ function ProfileOnboardingPage({
       } else {
         const nextValue = optionalText(value);
         if (!nextValue) {
-          setError(`Enter ${onboardingCopy(field).label.toLowerCase()} or skip this step.`);
+          setError(t("onboarding.enterOrSkip", { field: onboardingCopy(field, t).label.toLowerCase() }));
           return;
         }
         payload = { [field]: nextValue } as ProfileUpdatePayload;
       }
       await completeAndContinue(await api.updateProfile(payload));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Profile update failed.");
+      handleOnboardingError(err, t("onboarding.updateFailed"));
     } finally {
       setBusy(false);
     }
@@ -2264,10 +2935,16 @@ function ProfileOnboardingPage({
     if (!field) return;
     setBusy(true);
     setError(null);
+    setSessionExpired(false);
     try {
+      if (completeOnSkip) {
+        setUser(await skipAndCompleteOnboardingPrompt(field));
+        onFinished();
+        return;
+      }
       await completeAndContinue(await api.skipProfileOnboarding(field));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not skip this step.");
+      handleOnboardingError(err, t("onboarding.skipFailed"));
     } finally {
       setBusy(false);
     }
@@ -2276,10 +2953,11 @@ function ProfileOnboardingPage({
   async function finishWithoutPrompt() {
     setBusy(true);
     setError(null);
+    setSessionExpired(false);
     try {
       await completeAndContinue(user);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not complete profile setup.");
+      handleOnboardingError(err, t("onboarding.completeFailed"));
     } finally {
       setBusy(false);
     }
@@ -2287,29 +2965,34 @@ function ProfileOnboardingPage({
 
   if (!field) {
     return (
-      <AuthLayout backgroundSrc={backgroundSrc}>
+      <>
         <div className="panel-header">
-          <h2>Profile setup is ready</h2>
-          <p>Your profile steps are complete. Continue to your account.</p>
+          <h2>{t("onboarding.readyTitle")}</h2>
+          <p>{t("onboarding.readyBody")}</p>
         </div>
         <Alert message={error} />
+        {sessionExpired && (
+          <button type="button" className="secondary" onClick={() => go("login")}>
+            {t("common.backToSignIn")}
+          </button>
+        )}
         <button className="primary" onClick={finishWithoutPrompt} disabled={busy}>
-          {busy ? "Finishing..." : "Continue"}
+          {busy ? t("onboarding.finishing") : t("common.continue")}
         </button>
-      </AuthLayout>
+      </>
     );
   }
 
-  const copy = onboardingCopy(field);
+  const copy = onboardingCopy(field, t);
 
   return (
-    <AuthLayout backgroundSrc={backgroundSrc}>
+    <>
       <div className="panel-header">
         <h2>{copy.title}</h2>
         <p>{copy.helper}</p>
       </div>
       <div className="onboarding-progress">
-        Next profile detail: {humanize(field)}
+        {t("onboarding.nextDetail", { field: humanize(field) })}
       </div>
       <form onSubmit={saveStep} className="form-stack">
         {field === "gender" ? (
@@ -2318,14 +3001,14 @@ function ProfileOnboardingPage({
               label={copy.label}
               value={gender}
               onChange={setGender}
-              options={GENDER_OPTIONS}
+              options={genderOptions}
             />
             {gender === "custom" && (
               <Field
-                label="Custom gender"
+                label={t("onboarding.customGender")}
                 value={genderCustom}
                 onChange={setGenderCustom}
-                placeholder="How you want this shown"
+                placeholder={t("onboarding.customGenderPlaceholder")}
               />
             )}
           </>
@@ -2340,15 +3023,38 @@ function ProfileOnboardingPage({
           />
         )}
         <Alert message={error} />
+        {sessionExpired && (
+          <button type="button" className="secondary" onClick={() => go("login")}>
+            {t("common.backToSignIn")}
+          </button>
+        )}
         <div className="button-row">
           <button className="primary" disabled={busy}>
-            {busy ? "Saving..." : "Save and continue"}
+            {busy ? t("common.saving") : t("onboarding.saveContinue")}
           </button>
           <button type="button" className="secondary" onClick={skipStep} disabled={busy}>
-            Skip
+            {t("common.skip")}
           </button>
         </div>
       </form>
+    </>
+  );
+}
+
+function ProfileOnboardingPage({
+  user,
+  setUser,
+  onFinished,
+  backgroundSrc
+}: {
+  user: User;
+  setUser: (user: User) => void;
+  onFinished: () => void;
+  backgroundSrc: string;
+}) {
+  return (
+    <AuthLayout backgroundSrc={backgroundSrc}>
+      <ProfileOnboardingPanel user={user} setUser={setUser} onFinished={onFinished} />
     </AuthLayout>
   );
 }
@@ -2358,6 +3064,7 @@ function ProfileOnboardingPage({
 // ###############################################
 
 function AccountHomePage({ user, setUser }: { user: User; setUser: (user: User) => void }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [pictureModalOpen, setPictureModalOpen] = useState(false);
   const pictureModalPresence = useMotionPresence(pictureModalOpen, MOTION_BASE_MS);
@@ -2369,43 +3076,43 @@ function AccountHomePage({ user, setUser }: { user: User; setUser: (user: User) 
     onClick: () => void;
   }> = [
     {
-      title: "Personal info",
-      description: "Name, email, phone, birthday, language",
+      title: t("nav.personalInfo"),
+      description: t("account.personalInfoDesc"),
       icon: "id",
       tone: "green",
       onClick: () => go("profile")
     },
     {
-      title: "Security and sign-in",
-      description: "Password, active sessions, verification",
+      title: t("nav.security"),
+      description: t("account.securityDesc"),
       icon: "shield",
       tone: "cyan",
       onClick: () => go("security")
     },
     {
-      title: "Password",
-      description: "Change your account password",
+      title: t("common.password"),
+      description: t("account.passwordDesc"),
       icon: "key",
       tone: "cyan",
       onClick: () => goSecuritySection("password")
     },
     {
-      title: "Active sessions",
-      description: "Review devices signed in to your account",
+      title: t("common.activeSessions"),
+      description: t("account.sessionsDesc"),
       icon: "devices",
       tone: "cyan",
       onClick: () => goSecuritySection("sessions")
     },
     {
-      title: "Extra verification",
-      description: user.mfa_enabled ? "Verification code is required at sign-in" : "Add another check when signing in",
+      title: t("common.extraVerification"),
+      description: user.mfa_enabled ? t("account.verificationOnDesc") : t("account.verificationOffDesc"),
       icon: "shield",
       tone: "blue",
       onClick: () => goSecuritySection("verification")
     },
     {
-      title: "Security activity",
-      description: "Recent security activity and account alerts",
+      title: t("account.activityTitle"),
+      description: t("account.activityDesc"),
       icon: "activity",
       tone: "blue",
       onClick: () => goSecuritySection("activity")
@@ -2420,7 +3127,7 @@ function AccountHomePage({ user, setUser }: { user: User; setUser: (user: User) 
   return (
     <section className="account-home">
       <div className="home-identity">
-        <button className="home-avatar-wrap" aria-label="Change profile picture" onClick={() => setPictureModalOpen(true)}>
+        <button className="home-avatar-wrap" aria-label={t("avatar.change")} onClick={() => setPictureModalOpen(true)}>
           <Avatar user={user} />
           <span aria-hidden="true">
             <CameraIcon />
@@ -2437,23 +3144,23 @@ function AccountHomePage({ user, setUser }: { user: User; setUser: (user: User) 
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder={`Search ${PRODUCT_NAME}`}
-          aria-label={`Search ${PRODUCT_NAME}`}
+          placeholder={t("account.search", { product: PRODUCT_NAME })}
+          aria-label={t("account.search", { product: PRODUCT_NAME })}
         />
       </form>
 
-      <div className="quick-actions" aria-label="Quick account actions">
-        <button onClick={() => go("profile")}>Profile</button>
-        <button onClick={() => go("security")}>Password</button>
-        <button onClick={() => go("security")}>Devices</button>
-        <button onClick={() => go("security")}>Verification</button>
+      <div className="quick-actions" aria-label={t("account.quickActions")}>
+        <button onClick={() => go("profile")}>{t("common.profile")}</button>
+        <button onClick={() => go("security")}>{t("common.password")}</button>
+        <button onClick={() => go("security")}>{t("common.devices")}</button>
+        <button onClick={() => go("security")}>{t("common.verification")}</button>
       </div>
 
       <p className="home-privacy-note">
-        Only you can see your settings. Review your profile details, password, devices, and sign-in protection from this account center.
+        {t("account.privacy")}
       </p>
 
-      <div className="home-account-actions" aria-label="Account settings">
+      <div className="home-account-actions" aria-label={t("account.settings")}>
         {accountActions.map((action) => (
           <button key={action.title} className="home-account-action" onClick={action.onClick}>
             <span className={`home-account-action-icon home-account-action-icon-${action.tone}`}>
@@ -2473,7 +3180,7 @@ function AccountHomePage({ user, setUser }: { user: User; setUser: (user: User) 
           data-state={pictureModalPresence.state}
           role="dialog"
           aria-modal="true"
-          aria-label="Change profile picture"
+          aria-label={t("avatar.change")}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setPictureModalOpen(false);
           }}
@@ -2481,37 +3188,39 @@ function AccountHomePage({ user, setUser }: { user: User; setUser: (user: User) 
           <ProfilePictureModal user={user} setUser={setUser} onClose={() => setPictureModalOpen(false)} />
         </div>
       )}
+
     </section>
   );
 }
 
 function ProfilePage({ user }: { user: User }) {
+  const { t } = useI18n();
   return (
-    <SettingsPage title="Personal info">
+    <SettingsPage title={t("profile.title")}>
       <div className="settings-group">
         <SettingsRow
           icon="camera"
-          title="Profile picture"
+          title={t("common.profilePicture")}
           right={<Avatar user={user} />}
           onClick={() => goProfileEdit("picture")}
         />
-        <SettingsRow icon="id" title="Name" value={fullName(user)} onClick={() => goProfileEdit("name")} />
+        <SettingsRow icon="id" title={t("common.name")} value={fullName(user)} onClick={() => goProfileEdit("name")} />
         <SettingsRow
           icon="user"
-          title="Gender"
-          value={user.gender === "custom" ? displayValue(user.gender_custom) : genderLabel(user.gender)}
+          title={t("common.gender")}
+          value={user.gender === "custom" ? displayValue(user.gender_custom, t("common.notSet")) : genderLabel(user.gender, t)}
           onClick={() => goProfileEdit("gender")}
         />
-        <SettingsRow icon="mail" title="Email" value={user.email} />
+        <SettingsRow icon="mail" title={t("common.email")} value={user.email} />
         <SettingsRow
           icon="phone"
-          title="Phone"
-          value={user.phone_number ? `${user.phone_number}${user.phone_verified ? " · Verified" : " · Not verified"}` : "Not added"}
+          title={t("common.phone")}
+          value={user.phone_number ? `${user.phone_number}${user.phone_verified ? ` · ${t("common.verified")}` : ` · ${t("profile.phoneNotVerified")}`}` : t("common.notAdded")}
           onClick={() => goProfileEdit("phone")}
         />
-        <SettingsRow icon="cake" title="Birthday" value={displayValue(user.date_of_birth)} onClick={() => goProfileEdit("birthday")} />
-        <SettingsRow icon="globe" title="Language" value={primaryLanguage(user)} onClick={() => goProfileEdit("language")} />
-        <SettingsRow icon="clock" title="Timezone" value={displayValue(user.timezone)} onClick={() => goProfileEdit("timezone")} />
+        <SettingsRow icon="cake" title={t("common.birthday")} value={displayValue(user.date_of_birth, t("common.notSet"))} onClick={() => goProfileEdit("birthday")} />
+        <SettingsRow icon="globe" title={t("common.language")} value={primaryLanguage(user, t("common.notSet"))} onClick={() => goProfileEdit("language")} />
+        <SettingsRow icon="clock" title={t("common.timezone")} value={displayValue(user.timezone, t("common.notSet"))} onClick={() => goProfileEdit("timezone")} />
       </div>
     </SettingsPage>
   );
@@ -2526,6 +3235,7 @@ function ProfileEditPage({
   setUser: (user: User) => void;
   field: ProfileEditField;
 }) {
+  const { t, setLanguage } = useI18n();
   const [displayName, setDisplayName] = useState(user.display_name);
   const [firstName, setFirstName] = useState(user.first_name ?? "");
   const [lastName, setLastName] = useState(user.last_name ?? "");
@@ -2533,7 +3243,7 @@ function ProfileEditPage({
   const [gender, setGender] = useState<GenderValue | "">(user.gender ?? "");
   const [genderCustom, setGenderCustom] = useState(user.gender_custom ?? "");
   const [dateOfBirth, setDateOfBirth] = useState(user.date_of_birth ?? "");
-  const [locale, setLocale] = useState(user.locale ?? "");
+  const [languageChoice, setLanguageChoice] = useState<SupportedLanguage>(() => resolveSupportedLanguage(user.locale));
   const [timezone, setTimezone] = useState(user.timezone ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -2569,7 +3279,7 @@ function ProfileEditPage({
       } else if (field === "language") {
         payload = {
           display_name: user.display_name,
-          locale: optionalText(locale)
+          locale: localeForLanguage(languageChoice)
         };
       } else {
         payload = {
@@ -2580,9 +3290,13 @@ function ProfileEditPage({
 
       const updated = await api.updateProfile(payload);
       setUser(updated);
+      if (field === "language") {
+        const nextLanguage = resolveSupportedLanguage(updated.locale);
+        setLanguage(nextLanguage);
+      }
       go("profile");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Profile update failed.");
+      setError(err instanceof ApiError ? err.message : t("profile.updateFailed"));
     } finally {
       setBusy(false);
     }
@@ -2598,28 +3312,28 @@ function ProfileEditPage({
 
   const detailByField: Record<Exclude<ProfileEditField, "picture">, { label: string; description: string }> = {
     name: {
-      label: "Account name",
-      description: `Your name is shown in ${PRODUCT_NAME} and apps that use this account.`
+      label: t("profile.edit.accountName"),
+      description: t("profile.edit.accountNameBody", { product: PRODUCT_NAME })
     },
     gender: {
-      label: "Personal detail",
-      description: "Choose the gender value you want saved with your profile."
+      label: t("common.gender"),
+      description: t("profile.edit.genderBody")
     },
     phone: {
-      label: user.phone_verified ? "Phone verified" : "Phone not verified",
-      description: "Phone numbers are saved to your profile. Text message verification is not available yet."
+      label: user.phone_verified ? t("profile.edit.phoneVerified") : t("profile.edit.phoneNotVerified"),
+      description: t("profile.edit.phoneBody")
     },
     birthday: {
-      label: "Birthday",
-      description: "Your date of birth is optional and can be changed from this page."
+      label: t("common.birthday"),
+      description: t("profile.edit.birthdayBody")
     },
     language: {
-      label: "Language",
-      description: "Set the locale you prefer for account experiences that support it."
+      label: t("common.language"),
+      description: t("profile.edit.languageBody")
     },
     timezone: {
-      label: "Timezone",
-      description: "Set the timezone used for account activity and time-based details."
+      label: t("common.timezone"),
+      description: t("profile.edit.timezoneBody")
     }
   };
   const editDetail = detailByField[field];
@@ -2634,47 +3348,53 @@ function ProfileEditPage({
         {field === "name" && (
           <div className="profile-name-grid">
             <div className="profile-name-full">
-              <Field label="Display name" value={displayName} onChange={setDisplayName} required />
+              <Field label={t("common.displayName")} value={displayName} onChange={setDisplayName} required />
             </div>
-            <Field label="First name" value={firstName} onChange={setFirstName} />
-            <Field label="Last name" value={lastName} onChange={setLastName} />
+            <Field label={t("profile.firstName")} value={firstName} onChange={setFirstName} />
+            <Field label={t("profile.lastName")} value={lastName} onChange={setLastName} />
           </div>
         )}
         {field === "gender" && (
           <>
             <SelectField<GenderValue>
-              label="Gender"
+              label={t("common.gender")}
               value={gender}
               onChange={setGender}
-              options={GENDER_OPTIONS}
-              placeholder="Not set"
+              options={GENDER_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }))}
+              placeholder={t("common.notSet")}
             />
-            {gender === "custom" && <Field label="Custom gender" value={genderCustom} onChange={setGenderCustom} />}
+            {gender === "custom" && <Field label={t("onboarding.customGender")} value={genderCustom} onChange={setGenderCustom} />}
           </>
         )}
         {field === "phone" && (
           <>
-            <Field label="Phone number" type="tel" inputMode="tel" value={phoneNumber} onChange={setPhoneNumber} placeholder="+1 555 123 4567" />
-            <div className="field-help">Phone numbers are saved only. SMS verification is not enabled yet.</div>
+            <Field label={t("onboarding.phoneLabel")} type="tel" inputMode="tel" value={phoneNumber} onChange={setPhoneNumber} placeholder="+1 555 123 4567" />
+            <div className="field-help">{t("profile.phoneHelp")}</div>
           </>
         )}
         {field === "birthday" && (
-          <Field label="Date of birth" type="date" value={dateOfBirth} onChange={setDateOfBirth} />
+          <Field label={t("profile.dateOfBirth")} type="date" value={dateOfBirth} onChange={setDateOfBirth} />
         )}
         {field === "language" && (
-          <Field label="Language / locale" value={locale} onChange={setLocale} placeholder="en-US" />
+          <SelectField<SupportedLanguage>
+            label={t("common.language")}
+            value={languageChoice}
+            onChange={(value) => setLanguageChoice(value || "en")}
+            options={LANGUAGE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+            placeholder={null}
+          />
         )}
         {field === "timezone" && (
-          <Field label="Timezone" value={timezone} onChange={setTimezone} placeholder="Asia/Kuala_Lumpur" />
+          <Field label={t("common.timezone")} value={timezone} onChange={setTimezone} placeholder="Asia/Kuala_Lumpur" />
         )}
       </div>
       <Alert message={error} />
       <div className="button-row profile-edit-actions">
         <button className="primary" disabled={busy}>
-          {busy ? "Saving..." : "Save"}
+          {busy ? t("common.saving") : t("common.save")}
         </button>
         <button type="button" className="secondary" onClick={() => go("profile")} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </button>
       </div>
     </form>
@@ -2682,6 +3402,7 @@ function ProfileEditPage({
 }
 
 function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => void }) {
+  const { t, formatDateTime: formatForLanguage } = useI18n();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [mfaPassword, setMfaPassword] = useState("");
@@ -2708,11 +3429,11 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
       setSessions(nextSessions);
       setEvents(nextEvents);
     } catch (err) {
-      setSecurityError(err instanceof ApiError ? err.message : "Could not load security activity.");
+      setSecurityError(err instanceof ApiError ? err.message : t("security.loadFailed"));
     } finally {
       setSecurityLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     refreshSecurityData();
@@ -2737,10 +3458,10 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
       await api.changePassword({ current_password: currentPassword, new_password: newPassword });
       setCurrentPassword("");
       setNewPassword("");
-      setMessage("Password changed.");
+      setMessage(t("security.passwordChanged"));
       void refreshSecurityData();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Password change failed.");
+      setError(err instanceof ApiError ? err.message : t("security.passwordChangeFailed"));
     } finally {
       setBusy(false);
     }
@@ -2756,10 +3477,10 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
       setUser(updated);
       setMfaPassword("");
       setMfaCode("");
-      setMessage("Extra verification disabled.");
+      setMessage(t("security.mfaDisabled"));
       void refreshSecurityData();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not turn off extra verification.");
+      setError(err instanceof ApiError ? err.message : t("security.mfaDisableFailed"));
     } finally {
       setBusy(false);
     }
@@ -2772,7 +3493,7 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
     try {
       setSetup(await api.startMfaSetup());
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not start verification setup.");
+      setError(err instanceof ApiError ? err.message : t("security.mfaStartFailed"));
     } finally {
       setBusy(false);
     }
@@ -2781,7 +3502,7 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
   const onMfaEnabled = (updated: User) => {
     setUser(updated);
     setSetup(null);
-    setMessage("Extra verification enabled.");
+    setMessage(t("security.mfaEnabled"));
     void refreshSecurityData();
   };
 
@@ -2791,10 +3512,10 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
     setMessage(null);
     try {
       await api.revokeSession(session.id);
-      setMessage("Session signed out.");
+      setMessage(t("security.sessionSignedOut"));
       await refreshSecurityData();
     } catch (err) {
-      setSecurityError(err instanceof ApiError ? err.message : "Could not sign out this session.");
+      setSecurityError(err instanceof ApiError ? err.message : t("security.signOutSessionFailed"));
     } finally {
       setSecurityAction(null);
     }
@@ -2806,43 +3527,43 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
     setMessage(null);
     try {
       await api.logoutOtherSessions();
-      setMessage("Other devices signed out.");
+      setMessage(t("security.otherDevicesSignedOut"));
       await refreshSecurityData();
     } catch (err) {
-      setSecurityError(err instanceof ApiError ? err.message : "Could not sign out other devices.");
+      setSecurityError(err instanceof ApiError ? err.message : t("security.signOutOthersFailed"));
     } finally {
       setSecurityAction(null);
     }
   }
 
   return (
-    <SettingsPage title="Security and sign-in">
+    <SettingsPage title={t("security.title")}>
       <button className="settings-tip-card" onClick={() => setExpandedSection("verification")}>
         <span className="tip-icon">
           <SettingIcon name="shield" />
         </span>
         <span>
-          <strong>{user.mfa_enabled ? "Your account has extra protection" : "Add extra sign-in protection"}</strong>
-          <span>{user.mfa_enabled ? "A verification code is required when this account signs in." : "Turn on verification to add another check when signing in."}</span>
+          <strong>{user.mfa_enabled ? t("security.protectedTitle") : t("security.addProtectionTitle")}</strong>
+          <span>{user.mfa_enabled ? t("security.protectedBody") : t("security.addProtectionBody")}</span>
         </span>
       </button>
 
       <div className="settings-section">
-        <h2>Recent security activity</h2>
-        <p>{securityLoading ? "Loading recent activity..." : latestSecurityEvent(events)}</p>
+        <h2>{t("security.recentActivity")}</h2>
+        <p>{securityLoading ? t("security.loadingActivity") : latestSecurityEvent(events, t, formatForLanguage)}</p>
         <div className="settings-group">
           <SettingsRow
             icon="activity"
-            title="Security activity"
-            value={events.length === 0 ? "No security activity or alerts in the last 28 days" : `${events.length} recent events`}
+            title={t("account.activityTitle")}
+            value={events.length === 0 ? t("security.noRecentActivity") : t("security.eventsCount", { count: events.length })}
             onClick={() => setExpandedSection(expandedSection === "activity" ? null : "activity")}
           />
           <MotionPanel open={expandedSection === "activity"}>
               <Alert message={securityError} />
               {securityLoading ? (
-                <Alert message="Loading activity..." tone="info" />
+                <Alert message={t("security.loadingActivityInline")} tone="info" />
               ) : events.length === 0 ? (
-                <div className="empty-inline">No security activity found.</div>
+                <div className="empty-inline">{t("security.noActivity")}</div>
               ) : (
                 <div className="record-list">
                   {events.map((event) => (
@@ -2850,14 +3571,14 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
                       <div>
                         <div className="record-title">
                           <strong>{humanize(event.event_type)}</strong>
-                          <span>{formatDateTime(event.created_at)}</span>
+                          <span>{formatForLanguage(event.created_at)}</span>
                         </div>
-                        <p>{displayValue(event.device_label, "Unknown device")}</p>
+                        <p>{displayValue(event.device_label, t("security.unknownDevice"))}</p>
                         <div className="record-meta">
-                          <span>IP: {displayValue(event.ip_address)}</span>
-                          <span>User agent: {displayValue(event.user_agent)}</span>
+                          <span>{t("security.ip")}: {displayValue(event.ip_address, t("common.notSet"))}</span>
+                          <span>{t("security.userAgent")}: {displayValue(event.user_agent, t("common.notSet"))}</span>
                         </div>
-                        <div className="metadata-line">{metadataSummary(event.metadata)}</div>
+                        <div className="metadata-line">{metadataSummary(event.metadata, t)}</div>
                       </div>
                     </div>
                   ))}
@@ -2868,13 +3589,13 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
       </div>
 
       <div className="settings-section">
-        <h2>How you sign in</h2>
-        <p>Keep these settings up to date so you can always access your account.</p>
+        <h2>{t("security.howSignIn")}</h2>
+        <p>{t("security.howSignInBody")}</p>
         <div className="settings-group">
           <SettingsRow
             icon="shield"
-            title="Extra verification"
-            value={user.mfa_enabled ? "On" : "Off"}
+            title={t("common.extraVerification")}
+            value={user.mfa_enabled ? t("security.on") : t("security.off")}
             onClick={() => setExpandedSection(expandedSection === "verification" ? null : "verification")}
           />
           <MotionPanel open={expandedSection === "verification"}>
@@ -2882,15 +3603,15 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
                 <MfaSetupPanel setup={setup} onAuthenticated={onMfaEnabled} />
               ) : user.mfa_enabled ? (
                 <form className="form-stack" onSubmit={disableMfa}>
-                  <Field label="Current password" type="password" value={mfaPassword} onChange={setMfaPassword} />
-                  <Field label="Verification code" value={mfaCode} onChange={setMfaCode} />
+                  <Field label={t("common.currentPassword")} type="password" value={mfaPassword} onChange={setMfaPassword} />
+                  <Field label={t("common.verificationCode")} value={mfaCode} onChange={setMfaCode} />
                   <button className="secondary" disabled={busy}>
-                    Turn off extra verification
+                    {t("security.turnOffMfa")}
                   </button>
                 </form>
               ) : (
                 <button className="primary" onClick={enableMfa} disabled={busy}>
-                  Turn on extra verification
+                  {t("security.turnOnMfa")}
                 </button>
               )}
               <Alert message={error} />
@@ -2899,16 +3620,16 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
 
           <SettingsRow
             icon="key"
-            title="Password"
-            value="Change your account password"
+            title={t("common.password")}
+            value={t("account.passwordDesc")}
             onClick={() => setExpandedSection(expandedSection === "password" ? null : "password")}
           />
           <MotionPanel open={expandedSection === "password"}>
               <form className="form-stack" onSubmit={changePassword}>
-                <Field label="Current password" type="password" value={currentPassword} onChange={setCurrentPassword} />
-                <Field label="New password" type="password" value={newPassword} onChange={setNewPassword} />
+                <Field label={t("common.currentPassword")} type="password" value={currentPassword} onChange={setCurrentPassword} />
+                <Field label={t("common.newPassword")} type="password" value={newPassword} onChange={setNewPassword} />
                 <button className="primary" disabled={busy}>
-                  Change password
+                  {t("security.changePassword")}
                 </button>
               </form>
               <Alert message={error} />
@@ -2917,45 +3638,45 @@ function SecurityPage({ user, setUser }: { user: User; setUser: (user: User) => 
 
           <SettingsRow
             icon="devices"
-            title="Active sessions"
-            value={securityLoading ? "Loading sessions..." : `${sessions.length} active ${sessions.length === 1 ? "session" : "sessions"}`}
+            title={t("common.activeSessions")}
+            value={securityLoading ? t("security.sessionsLoading") : t("security.sessionsCount", { count: sessions.length, label: sessions.length === 1 ? t("security.session") : t("security.sessions") })}
             onClick={() => setExpandedSection(expandedSection === "sessions" ? null : "sessions")}
           />
           <MotionPanel open={expandedSection === "sessions"}>
               <div className="split-header compact-header">
                 <div>
-                  <h3>Devices signed in</h3>
-                  <p>Review the devices currently signed in to your account.</p>
+                  <h3>{t("security.devicesSignedIn")}</h3>
+                  <p>{t("security.devicesBody")}</p>
                 </div>
                 <button className="secondary" onClick={logoutOtherSessions} disabled={securityAction !== null || sessions.length <= 1}>
-                  {securityAction === "logout-others" ? "Signing out..." : "Sign out other devices"}
+                  {securityAction === "logout-others" ? t("security.signingOut") : t("security.signOutOtherDevices")}
                 </button>
               </div>
               <Alert message={securityError} />
               {securityLoading ? (
-                <Alert message="Loading sessions..." tone="info" />
+                <Alert message={t("security.sessionsLoading")} tone="info" />
               ) : sessions.length === 0 ? (
-                <div className="empty-inline">No active sessions found.</div>
+                <div className="empty-inline">{t("security.noSessions")}</div>
               ) : (
                 <div className="record-list">
                   {sessions.map((session) => (
                     <div className="record-item" key={session.id}>
                       <div>
                         <div className="record-title">
-                          <strong>{displayValue(session.device_label, "Unknown device")}</strong>
-                          {session.is_current && <span className="current-badge">Current</span>}
+                          <strong>{displayValue(session.device_label, t("security.unknownDevice"))}</strong>
+                          {session.is_current && <span className="current-badge">{t("security.current")}</span>}
                         </div>
-                        <p>{displayValue(session.user_agent, "No user agent")}</p>
+                        <p>{displayValue(session.user_agent, t("security.noUserAgent"))}</p>
                         <div className="record-meta">
-                          <span>Login IP: {displayValue(session.login_ip_address)}</span>
-                          <span>Last IP: {displayValue(session.last_seen_ip_address)}</span>
-                          <span>Last seen: {formatDateTime(session.last_seen_at)}</span>
-                          <span>Expires: {formatDateTime(session.expires_at)}</span>
+                          <span>{t("security.loginIp")}: {displayValue(session.login_ip_address, t("common.notSet"))}</span>
+                          <span>{t("security.lastIp")}: {displayValue(session.last_seen_ip_address, t("common.notSet"))}</span>
+                          <span>{t("security.lastSeen")}: {formatForLanguage(session.last_seen_at)}</span>
+                          <span>{t("security.expires")}: {formatForLanguage(session.expires_at)}</span>
                         </div>
                       </div>
                       {!session.is_current && (
                         <button className="secondary" onClick={() => revokeSession(session)} disabled={securityAction !== null}>
-                          {securityAction === session.id ? "Signing out..." : "Sign out"}
+                          {securityAction === session.id ? t("security.signingOut") : t("common.signOut")}
                         </button>
                       )}
                     </div>
@@ -2978,6 +3699,7 @@ export default function App() {
   const [pendingRedirect, setPendingRedirect] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeSettings>(loadThemeSettings);
   const [loginBackgroundSrc, setLoginBackgroundSrc] = useState(loadLoginBackgroundSrc);
+  const [language, setLanguageState] = useState<SupportedLanguage>(loadStoredLanguage);
   const { user, setUser, loading } = useSession();
 
   useEffect(() => {
@@ -2989,6 +3711,32 @@ export default function App() {
   useEffect(() => {
     applyThemeSettings(theme);
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.lang = localeForLanguage(language);
+    saveStoredLanguage(language);
+  }, [language]);
+
+  useEffect(() => {
+    if (user?.locale) {
+      setLanguageState(resolveSupportedLanguage(user.locale));
+      return;
+    }
+    if (!user) {
+      setLanguageState(loadStoredLanguage());
+    }
+  }, [user?.id, user?.locale]);
+
+  const setLanguage = useCallback((nextLanguage: SupportedLanguage) => {
+    setLanguageState(nextLanguage);
+  }, []);
+
+  const i18nValue = useMemo<I18nContextValue>(() => ({
+    language,
+    setLanguage,
+    t: (key, values) => translate(language, key, values),
+    formatDateTime: (value) => formatDateTime(value, language)
+  }), [language, setLanguage]);
 
   const updateTheme = useCallback((nextTheme: ThemeSettings) => {
     const normalized = normalizeTheme(nextTheme);
@@ -3026,6 +3774,12 @@ export default function App() {
     </>
   ), [loginBackgroundSrc, resetLoginBackground, resetTheme, theme, updateLoginBackground, updateTheme]);
 
+  const withProviders = useCallback((content: ReactNode) => (
+    <I18nContext.Provider value={i18nValue}>
+      {withThemeCustomizer(content)}
+    </I18nContext.Provider>
+  ), [i18nValue, withThemeCustomizer]);
+
   const finishOnboarding = useCallback(() => {
     if (pendingRedirect) {
       window.location.href = pendingRedirect;
@@ -3034,14 +3788,10 @@ export default function App() {
     go("account");
   }, [pendingRedirect]);
 
-  const onAuthenticated = useCallback((nextUser: User, options?: { showOnboarding?: boolean }) => {
+  const onAuthenticated = useCallback((nextUser: User) => {
     setUser(nextUser);
     const redirect = nextUrl();
     setPendingRedirect(redirect);
-    if (options?.showOnboarding && nextUser.profile_completion.next_prompt_field) {
-      go("profile-onboarding");
-      return;
-    }
     if (redirect) {
       window.location.href = redirect;
       return;
@@ -3065,34 +3815,39 @@ export default function App() {
     return null;
   }, [route, setUser, user]);
 
-  if (route === "register") return withThemeCustomizer(<RegisterPage onAuthenticated={onAuthenticated} backgroundSrc={loginBackgroundSrc} />);
-  if (route === "login") return withThemeCustomizer(<LoginPage onAuthenticated={onAuthenticated} backgroundSrc={loginBackgroundSrc} />);
+  if (route === "register") return withProviders(<RegisterPage onAuthenticated={onAuthenticated} backgroundSrc={loginBackgroundSrc} />);
+  if (route === "login") return withProviders(<LoginPage onAuthenticated={onAuthenticated} backgroundSrc={loginBackgroundSrc} />);
   if (route === "authorize") {
-    return withThemeCustomizer(
+    return withProviders(
       <OAuthAuthorizePage user={user} loading={loading} onAuthenticated={onAuthenticated} backgroundSrc={loginBackgroundSrc} />
     );
   }
-  if (route === "forgot-password") return withThemeCustomizer(<ForgotPasswordPage backgroundSrc={loginBackgroundSrc} />);
-  if (route === "reset-password") return withThemeCustomizer(<ResetPasswordPage backgroundSrc={loginBackgroundSrc} />);
+  if (route === "forgot-password") return withProviders(<ForgotPasswordPage backgroundSrc={loginBackgroundSrc} />);
+  if (route === "reset-password") return withProviders(<ResetPasswordPage backgroundSrc={loginBackgroundSrc} />);
   if (route === "profile-onboarding" && user) {
-    return withThemeCustomizer(
+    return withProviders(
       <ProfileOnboardingPage user={user} setUser={setUser} onFinished={finishOnboarding} backgroundSrc={loginBackgroundSrc} />
     );
   }
-  if (loading || !user) return withThemeCustomizer(<StandaloneAccessState loading={loading} backgroundSrc={loginBackgroundSrc} />);
+  if (loading || !user) return withProviders(<StandaloneAccessState loading={loading} backgroundSrc={loginBackgroundSrc} />);
+  if (isLegalRoute(route)) {
+    return withProviders(
+      <LegalShell user={user} setUser={setUser} route={route} onLogout={onLogout} />
+    );
+  }
   if (route === "profile-edit") {
     const field = profileEditField();
-    return withThemeCustomizer(
-      <ProfileEditDetailShell user={user} setUser={setUser} title={profileEditTitle(field)} onLogout={onLogout}>
+    return withProviders(
+      <ProfileEditDetailShell user={user} setUser={setUser} title={profileEditTitle(field, i18nValue.t)} onLogout={onLogout}>
         <ProfileEditPage user={user} setUser={setUser} field={field} />
       </ProfileEditDetailShell>
     );
   }
-  if (!protectedPage) return withThemeCustomizer(<StandaloneAccessState loading={loading} backgroundSrc={loginBackgroundSrc} />);
+  if (!protectedPage) return withProviders(<StandaloneAccessState loading={loading} backgroundSrc={loginBackgroundSrc} />);
 
   const activeConsoleRoute = route as ConsoleRoute;
 
-  return withThemeCustomizer(
+  return withProviders(
     <Shell user={user} setUser={setUser} route={activeConsoleRoute} onLogout={onLogout}>
       {protectedPage}
     </Shell>

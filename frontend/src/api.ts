@@ -1,7 +1,7 @@
 /*
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-13 23:34
-Description: Frontend API client for GozilaSim ID backend endpoints.
+Updated at: 2026-05-16 17:43
+Description: Frontend API client for GozilaSim ID backend and launcher endpoints.
 */
 
 // ###############################################
@@ -12,6 +12,7 @@ import type {
   AuthorizeContext,
   AvatarHistoryItem,
   ForgotPasswordResponse,
+  LauncherApp,
   LoginResponse,
   MfaSetup,
   ProfilePromptField,
@@ -130,6 +131,7 @@ export const api = {
     request<User>("/api/profile/onboarding/skip", { method: "POST", body: { field } }),
   completeProfileOnboarding: () =>
     request<User>("/api/profile/onboarding/complete", { method: "POST" }),
+  listLauncherApps: () => request<LauncherApp[]>("/api/apps/launcher"),
   uploadAvatar: (file: File) => {
     const formData = new FormData();
     formData.set("avatar", file);
