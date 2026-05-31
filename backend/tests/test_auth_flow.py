@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-13 23:34
+# Updated at: 2026-05-31 17:37
 # Description: Backend tests for MFA, OIDC, and avatar flows.
 
 from __future__ import annotations
@@ -416,7 +416,11 @@ def test_totp_rejects_bad_code():
 # OIDC And Avatar Tests
 # ###############################################
 
-def test_oidc_authorize_redirects_unauthenticated_user_to_popup_authorize_page():
+def test_oidc_authorize_redirects_unauthenticated_user_to_popup_authorize_page(monkeypatch):
+    from app.routers.oidc import settings as oidc_settings
+
+    monkeypatch.setattr(oidc_settings, "backend_url", "https://gozilasim-account-api.gozilasim.win")
+    monkeypatch.setattr(oidc_settings, "frontend_url", "https://gozilasim-account.gozilasim.win")
     client, SessionLocal = make_client()
     seed_oidc_client(SessionLocal)
 
@@ -438,10 +442,12 @@ def test_oidc_authorize_redirects_unauthenticated_user_to_popup_authorize_page()
     assert response.status_code == 302
     location = response.headers["location"]
     parsed = urlparse(location)
+    assert f"{parsed.scheme}://{parsed.netloc}" == "https://gozilasim-account.gozilasim.win"
     assert parsed.path == "/authorize"
     next_url = parse_qs(parsed.query)["next"][0]
     next_parsed = urlparse(next_url)
     next_params = parse_qs(next_parsed.query)
+    assert f"{next_parsed.scheme}://{next_parsed.netloc}" == "https://gozilasim-account-api.gozilasim.win"
     assert next_parsed.path == "/oauth/authorize"
     assert next_params["client_id"] == ["media-editor-dev"]
     assert next_params["redirect_uri"] == ["http://client.example/callback"]
