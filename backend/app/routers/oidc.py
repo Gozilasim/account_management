@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 01:23
+# Updated at: 2026-05-31 17:37
 # Description: Minimal OIDC provider endpoints for Login via Portal.
 
 from __future__ import annotations
@@ -96,6 +96,13 @@ def ensure_aware(value: datetime) -> datetime:
     return value
 
 
+def public_authorize_request_url(request: Request) -> str:
+    authorize_url = f"{settings.issuer}/oauth/authorize"
+    if request.url.query:
+        authorize_url = f"{authorize_url}?{request.url.query}"
+    return authorize_url
+
+
 # ###############################################
 # Discovery
 # ###############################################
@@ -185,7 +192,7 @@ def authorize(
     try:
         user = get_user_from_request(request, db)
     except HTTPException:
-        next_url = quote(str(request.url), safe="")
+        next_url = quote(public_authorize_request_url(request), safe="")
         return RedirectResponse(f"{settings.frontend_origin}/authorize?next={next_url}", status_code=status.HTTP_302_FOUND)
 
     code = secrets.token_urlsafe(32)
