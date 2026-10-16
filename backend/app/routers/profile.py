@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 02:17
+# Updated at: 2026-10-11 02:30
 # Description: Profile details, onboarding state, and Cloudinary avatar API routes.
 
 from __future__ import annotations
@@ -114,6 +114,25 @@ async def upload_profile_avatar(
     db.commit()
     db.refresh(current_user)
 
+    return user_out(current_user)
+
+
+@router.delete("/avatar", response_model=UserOut)
+def remove_profile_avatar(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserOut:
+    if not current_user.avatar_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="There is no profile picture to remove.")
+
+    # The removed picture stays in the history, so it can still be restored later.
+    append_current_avatar_to_history(current_user, utcnow())
+    current_user.avatar_public_id = None
+    current_user.avatar_url = None
+    record_security_event(db, current_user.id, "avatar_updated", request, metadata={"removed": True})
+    db.commit()
+    db.refresh(current_user)
     return user_out(current_user)
 
 

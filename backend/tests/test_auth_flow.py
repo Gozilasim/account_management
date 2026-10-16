@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-31 17:37
+# Updated at: 2026-10-11 12:15
 # Description: Backend tests for MFA, OIDC, and avatar flows.
 
 from __future__ import annotations
@@ -94,7 +94,16 @@ def seed_oidc_client(SessionLocal) -> None:
         db.commit()
 
 
+def allow_app(client: TestClient, scope: str = "openid email profile"):
+    """Agrees to the test app, as the consent page does when the person selects Continue."""
+    return client.post(
+        "/oauth/authorize/consent",
+        json={"client_id": "media-editor-dev", "redirect_uri": "http://client.example/callback", "scope": scope},
+    )
+
+
 def issue_oidc_token(client: TestClient, scope: str = "openid email profile") -> tuple[dict, str]:
+    assert allow_app(client, scope).status_code == 200
     verifier = "a" * 64
     response = client.get(
         "/oauth/authorize",
@@ -624,3 +633,25 @@ def test_avatar_upload_preserves_previous_assets_in_history(monkeypatch):
     assert deleted == ["avatar/two"]
     remaining = client.get("/api/profile/avatar/history")
     assert [item["public_id"] for item in remaining.json()] == ["avatar/three"]
+
+
+def test_avatar_remove_keeps_picture_in_history(monkeypatch):
+    client, _ = make_client()
+    enroll_user(client)
+    monkeypatch.setattr("app.routers.profile.upload_avatar", lambda user, content: ("avatar/one", "https://cdn.example/one.png"))
+
+    nothing_to_remove = client.delete("/api/profile/avatar")
+    assert nothing_to_remove.status_code == 400
+
+    uploaded = client.post("/api/profile/avatar", files={"avatar": ("avatar.png", b"first-image", "image/png")})
+    assert uploaded.json()["avatar_url"] == "https://cdn.example/one.png"
+
+    removed = client.delete("/api/profile/avatar")
+    assert removed.status_code == 200
+    assert removed.json()["avatar_url"] is None
+    assert [item["public_id"] for item in removed.json()["avatar_history"]] == ["avatar/one"]
+
+    restored = client.post("/api/profile/avatar/restore", json={"public_id": "avatar/one"})
+    assert restored.status_code == 200
+    assert restored.json()["avatar_url"] == "https://cdn.example/one.png"
+    assert restored.json()["avatar_history"] == []

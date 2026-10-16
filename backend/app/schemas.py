@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-17 02:58
+# Updated at: 2026-10-11 12:13
 # Description: Pydantic request and response schemas for Portal APIs and launcher data.
 
 from __future__ import annotations
@@ -54,6 +54,11 @@ class UserOut(BaseModel):
     mfa_enabled: bool
     mfa_enrolled: bool
     email_verified: bool
+    backup_codes_remaining: int = 0
+    backup_codes_generated_at: datetime | None = None
+    recovery_email: str | None = None
+    recovery_email_verified: bool = False
+    password_changed_at: datetime | None = None
     profile_completion: ProfileCompletionOut
 
 
@@ -99,11 +104,55 @@ class LoginResponse(BaseModel):
     mfa_setup_required: bool = False
     challenge_id: str | None = None
     mfa_setup: MfaSetupOut | None = None
+    # Ways the second step can be completed for this account: "totp", "backup_code", "recovery_email".
+    mfa_methods: list[str] = []
+    recovery_email_hint: str | None = None
+
+
+MFA_METHODS = {"totp", "backup_code", "recovery_email"}
 
 
 class MfaVerifyRequest(BaseModel):
     challenge_id: str
     code: str = Field(min_length=6, max_length=12)
+    method: str = "totp"
+
+    @field_validator("method")
+    @classmethod
+    def validate_method(cls, value: str) -> str:
+        if value not in MFA_METHODS:
+            raise ValueError("Verification method is not supported.")
+        return value
+
+
+class ChallengeRequest(BaseModel):
+    challenge_id: str
+
+
+class PasswordConfirmRequest(BaseModel):
+    current_password: str
+
+
+class OneTimeCodeRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=12)
+
+
+class RecoveryEmailRequest(BaseModel):
+    email: EmailStr
+    current_password: str
+
+
+class CodeSentResponse(BaseModel):
+    message: str
+    # "email" when the code was emailed, "log" when the server only logged it.
+    delivery: str
+    # Present only in local development, never on a deployed frontend.
+    dev_code: str | None = None
+
+
+class BackupCodesOut(BaseModel):
+    codes: list[str]
+    generated_at: datetime
 
 
 class ChangePasswordRequest(BaseModel):
@@ -124,6 +173,9 @@ class ForgotPasswordRequest(BaseModel):
 
 class ForgotPasswordResponse(BaseModel):
     message: str
+    # "email" when the link was emailed, "log" when it was only written to the server log.
+    delivery: str = "log"
+    # Present only in local development, never on a deployed frontend.
     reset_link: str | None = None
 
 
@@ -259,6 +311,47 @@ class LauncherAppOut(BaseModel):
     home_url: str
     launch_url: str | None = None
     icon_url: str | None = None
+
+
+# ###############################################
+# Connected App Schemas
+# ###############################################
+
+class AppConsentRequest(BaseModel):
+    client_id: str = Field(min_length=1, max_length=120)
+    redirect_uri: str = Field(min_length=1, max_length=2048)
+    scope: str = Field(min_length=1, max_length=500)
+
+
+class ConnectedAppOut(BaseModel):
+    client_id: str
+    name: str
+    home_url: str | None = None
+    launch_url: str | None = None
+    icon_url: str | None = None
+    scopes: list[str]
+    granted_at: datetime
+    last_used_at: datetime | None = None
+
+
+# ###############################################
+# Account Data Schemas
+# ###############################################
+
+class DataSummaryOut(BaseModel):
+    sessions: int
+    security_events: int
+    profile_pictures: int
+    connected_apps: int
+    # What deleting the account asks for besides the email and password:
+    # "authenticator", "email_code", or "password" when nothing more can be asked.
+    delete_confirmation: str
+
+
+class DeleteAccountRequest(BaseModel):
+    email: EmailStr
+    current_password: str
+    code: str | None = Field(default=None, max_length=12)
 
 
 # ###############################################

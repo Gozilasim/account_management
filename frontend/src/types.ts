@@ -1,6 +1,6 @@
 /*
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-17 02:58
+Updated at: 2026-10-11 12:27
 Description: Shared frontend TypeScript types for GozilaSim ID API and app launcher responses.
 */
 
@@ -37,6 +37,12 @@ export type User = {
   mfa_enabled: boolean;
   mfa_enrolled: boolean;
   email_verified: boolean;
+  backup_codes_remaining: number;
+  backup_codes_generated_at: string | null;
+  // Present only once the address has been confirmed with a code.
+  recovery_email: string | null;
+  recovery_email_verified: boolean;
+  password_changed_at: string | null;
   profile_completion: ProfileCompletion;
 };
 
@@ -58,16 +64,35 @@ export type MfaSetup = {
 // Auth Response Types
 // ###############################################
 
+export type MfaMethod = "totp" | "backup_code" | "recovery_email";
+
 export type LoginResponse = {
   user?: User | null;
   mfa_required: boolean;
   mfa_setup_required: boolean;
   challenge_id?: string | null;
   mfa_setup?: MfaSetup | null;
+  // Ways the second step can be completed for this account.
+  mfa_methods?: MfaMethod[];
+  recovery_email_hint?: string | null;
+};
+
+export type CodeSentResponse = {
+  message: string;
+  delivery: "email" | "log";
+  // Returned only in local development, when email is off.
+  dev_code?: string | null;
+};
+
+export type BackupCodes = {
+  codes: string[];
+  generated_at: string;
 };
 
 export type ForgotPasswordResponse = {
   message: string;
+  // "email" when the link was emailed, "log" when the server only logged it.
+  delivery?: "email" | "log";
   reset_link?: string | null;
 };
 
@@ -82,6 +107,31 @@ export type AuthorizeContext = {
   redirect_uri: string;
   scope: string;
   scopes: string[];
+  // False once the signed-in person has already agreed to everything this request asks for.
+  consent_required?: boolean;
+};
+
+export type ConnectedApp = {
+  client_id: string;
+  name: string;
+  home_url: string | null;
+  launch_url: string | null;
+  icon_url: string | null;
+  scopes: string[];
+  granted_at: string;
+  // Empty until the app has been opened with this account.
+  last_used_at: string | null;
+};
+
+// What deleting the account asks for besides the email address and password.
+export type DeleteConfirmation = "authenticator" | "email_code" | "password";
+
+export type DataSummary = {
+  sessions: number;
+  security_events: number;
+  profile_pictures: number;
+  connected_apps: number;
+  delete_confirmation: DeleteConfirmation;
 };
 
 

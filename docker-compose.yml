@@ -1,6 +1,10 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 02:42
+# Updated at: 2026-10-11 11:27
 # Description: Local backend service with SQLite storage for Portal development.
+
+# ###############################################
+# Services
+# ###############################################
 
 services:
   backend:
@@ -23,6 +27,17 @@ services:
       SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-10080}
       MFA_ISSUER: ${MFA_ISSUER:-My Portal}
       PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-8}
+      PASSWORD_RESET_DELIVERY: ${PASSWORD_RESET_DELIVERY:-dev_log}
+      PASSWORD_RESET_TOKEN_TTL_MINUTES: ${PASSWORD_RESET_TOKEN_TTL_MINUTES:-30}
+      AUTH_MAX_FAILED_ATTEMPTS: ${AUTH_MAX_FAILED_ATTEMPTS:-5}
+      AUTH_LOCKOUT_MINUTES: ${AUTH_LOCKOUT_MINUTES:-15}
+      PRODUCT_NAME: ${PRODUCT_NAME:-GozilaSim ID}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+      EMAIL_FROM: ${EMAIL_FROM:-}
       AVATAR_MAX_BYTES: ${AVATAR_MAX_BYTES:-5242880}
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
@@ -36,7 +51,7 @@ services:
     volumes:
       - ./data:/app/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${BACKEND_PORT:-8000}/health').read()"]
-      interval: 10s
+      test: ["CMD", "python", "-c", "import sys, http.client as h; c = h.HTTPConnection('127.0.0.1', ${BACKEND_PORT:-8000}, timeout=3); c.request('GET', '/health'); sys.exit(c.getresponse().status != 200)"]
+      interval: 30s
       timeout: 5s
       retries: 5

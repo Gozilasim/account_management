@@ -1,6 +1,6 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-31 17:37
-# Description: Minimal OIDC provider endpoints for Login via Portal.
+# Updated at: 2026-10-11 12:39
+# Description: Minimal OIDC provider endpoints for Login via Portal, including the app consent step.
 
 from __future__ import annotations
 
@@ -17,10 +17,13 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit import record_security_event
 from app.config import settings
+from app.consents import consent_covers, find_consent, grant_consent, mark_consent_used
 from app.database import get_db
-from app.deps import get_user_from_request
+from app.deps import get_current_user, get_user_from_request
 from app.models import AccessToken, AuthorizationCode, OidcClient, User, utcnow
+from app.schemas import AppConsentRequest, MessageOut
 from app.security import (
     add_query_params,
     epoch_seconds,
@@ -55,14 +58,34 @@ def validate_scopes(client: OidcClient, scope: str) -> str:
     return " ".join(requested)
 
 
-def authorize_context_payload(client: OidcClient, redirect_uri: str, normalized_scope: str) -> dict:
+def authorize_context_payload(
+    client: OidcClient,
+    redirect_uri: str,
+    normalized_scope: str,
+    consent_required: bool = True,
+) -> dict:
     return {
         "client_id": client.client_id,
         "client_name": client.name,
         "redirect_uri": redirect_uri,
         "scope": normalized_scope,
         "scopes": normalized_scope.split(),
+        "consent_required": consent_required,
     }
+
+
+def validated_request(db: Session, client_id: str, redirect_uri: str, scope: str) -> tuple[OidcClient, str]:
+    """Checks that the app exists, owns the redirect address, and may ask for these scopes."""
+    client = client_by_id(db, client_id)
+    if redirect_uri not in client.redirect_uris:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid redirect_uri.")
+    return client, validate_scopes(client, scope)
+
+
+def consent_page_redirect(request: Request) -> RedirectResponse:
+    """Sends the browser to the account site, which signs the person in and asks whether the app may continue."""
+    next_url = quote(public_authorize_request_url(request), safe="")
+    return RedirectResponse(f"{settings.frontend_origin}/authorize?next={next_url}", status_code=status.HTTP_302_FOUND)
 
 
 def oidc_claims(user: User, scope: str) -> dict:
@@ -150,16 +173,44 @@ def jwks() -> dict:
 
 @router.get("/oauth/authorize/context")
 def authorize_context(
+    request: Request,
     client_id: str,
     redirect_uri: str,
     scope: str,
     db: Session = Depends(get_db),
 ) -> dict:
-    client = client_by_id(db, client_id)
-    if redirect_uri not in client.redirect_uris:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid redirect_uri.")
-    normalized_scope = validate_scopes(client, scope)
-    return authorize_context_payload(client, redirect_uri, normalized_scope)
+    client, normalized_scope = validated_request(db, client_id, redirect_uri, scope)
+
+    # Signed-out visitors get the public details only. Whether they already agreed is known once they sign in.
+    consent_required = True
+    try:
+        user = get_user_from_request(request, db)
+    except HTTPException:
+        user = None
+    if user:
+        consent_required = not consent_covers(find_consent(db, user, client), normalized_scope)
+    return authorize_context_payload(client, redirect_uri, normalized_scope, consent_required)
+
+
+@router.post("/oauth/authorize/consent", response_model=MessageOut)
+def grant_app_consent(
+    payload: AppConsentRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessageOut:
+    """Records that the signed-in person agreed to let this app use the requested details."""
+    client, normalized_scope = validated_request(db, payload.client_id, payload.redirect_uri, payload.scope)
+    if grant_consent(db, current_user, client, normalized_scope):
+        record_security_event(
+            db,
+            current_user.id,
+            "app_access_granted",
+            request,
+            metadata={"client_id": client.client_id, "app_name": client.name, "scopes": normalized_scope.split()},
+        )
+    db.commit()
+    return MessageOut(message="Access granted.")
 
 
 # ###############################################
@@ -184,16 +235,19 @@ def authorize(
     if not code_challenge or code_challenge_method != "S256":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PKCE S256 is required.")
 
-    client = client_by_id(db, client_id)
-    if redirect_uri not in client.redirect_uris:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid redirect_uri.")
-    normalized_scope = validate_scopes(client, scope)
+    client, normalized_scope = validated_request(db, client_id, redirect_uri, scope)
 
     try:
         user = get_user_from_request(request, db)
     except HTTPException:
-        next_url = quote(public_authorize_request_url(request), safe="")
-        return RedirectResponse(f"{settings.frontend_origin}/authorize?next={next_url}", status_code=status.HTTP_302_FOUND)
+        return consent_page_redirect(request)
+
+    # An app gets a code only after the person has agreed to it. The first visit, and any request for
+    # more than was agreed, goes through the consent page.
+    consent = find_consent(db, user, client)
+    if not consent_covers(consent, normalized_scope):
+        return consent_page_redirect(request)
+    mark_consent_used(consent)
 
     code = secrets.token_urlsafe(32)
     auth_code = AuthorizationCode(

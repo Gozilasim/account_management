@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-12 02:42
+# Updated at: 2026-10-11 11:21
 # Description: Application settings loaded from environment variables.
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic import AnyHttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -46,10 +47,24 @@ class Settings(BaseSettings):
     session_ttl_minutes: int = 60 * 24 * 7
     trust_proxy_headers: bool = False
 
+    product_name: str = "GozilaSim ID"
     mfa_issuer: str = "My Portal"
     password_min_length: int = 8
+    # "email" sends the reset link by email. "dev_log" only writes it to the server log.
     password_reset_delivery: str = "dev_log"
     password_reset_token_ttl_minutes: int = 30
+    # Repeated failures for one account or one IP address lock sign-in for a while.
+    auth_max_failed_attempts: int = 5
+    auth_lockout_minutes: int = 15
+
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    # "starttls", "ssl", or "none".
+    smtp_security: str = "starttls"
+    smtp_timeout_seconds: int = 10
+    email_from: str | None = None
     avatar_max_bytes: int = 5 * 1024 * 1024
 
     cloudinary_cloud_name: str | None = None
@@ -84,6 +99,10 @@ class Settings(BaseSettings):
         "cloudinary_api_secret",
         "oidc_private_key_pem",
         "oidc_private_key_path",
+        "smtp_host",
+        "smtp_username",
+        "smtp_password",
+        "email_from",
         mode="before",
     )
     @classmethod
@@ -118,8 +137,18 @@ class Settings(BaseSettings):
         return list(dict.fromkeys(origins))
 
     @property
+    def frontend_is_local(self) -> bool:
+        # Only a locally served frontend is treated as a development setup.
+        host = (urlparse(self.frontend_origin).hostname or "").lower()
+        return host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".localhost")
+
+    @property
     def cloudinary_configured(self) -> bool:
         return bool(self.cloudinary_cloud_name and self.cloudinary_api_key and self.cloudinary_api_secret)
+
+    @property
+    def email_configured(self) -> bool:
+        return bool(self.smtp_host and self.email_from)
 
     def ensure_sqlite_parent_directory(self) -> None:
         prefix = self.sqlite_prefix(self.database_url)
