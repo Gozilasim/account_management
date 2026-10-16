@@ -1,5 +1,5 @@
 # Created at: 2026-05-13 22:53
-# Updated at: 2026-05-13 22:53
+# Updated at: 2026-10-11 01:37
 # Description: Server Docker Compose configuration for the backend Portal service.
 
 # ###############################################
@@ -19,7 +19,7 @@ services:
     volumes:
       - ./data:/app/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8050/health').read()"]
-      interval: 10s
+      test: ["CMD", "python", "-c", "import sys, http.client as h; c = h.HTTPConnection('127.0.0.1', 8050, timeout=3); c.request('GET', '/health'); sys.exit(c.getresponse().status != 200)"]
+      interval: 30s
       timeout: 5s
       retries: 5

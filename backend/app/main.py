@@ -1,5 +1,5 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-16 17:43
+# Updated at: 2026-10-11 12:14
 # Description: FastAPI application factory and account/OIDC router registration.
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.oidc_clients import sync_configured_oidc_clients
-from app.routers import apps, auth, oidc, profile
+from app.routers import account, apps, auth, oidc, profile
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +43,14 @@ def create_app(sync_oidc_clients_on_startup: bool = True) -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Lets the browser read how long a locked-out sign-in has to wait.
+        expose_headers=["Retry-After"],
     )
 
     app.include_router(auth.router)
     app.include_router(profile.router)
     app.include_router(apps.router)
+    app.include_router(account.router)
     app.include_router(oidc.router)
 
     @app.get("/health")

@@ -1,6 +1,6 @@
 # Created at: 2026-05-11 01:17
-# Updated at: 2026-05-17 02:58
-# Description: SQLAlchemy ORM models for Portal accounts, profile data, sessions, audit events, MFA, and OIDC.
+# Updated at: 2026-10-11 12:12
+# Description: SQLAlchemy ORM models for Portal accounts, profile data, sessions, audit events, MFA, sign-in throttling, OIDC, and app consent.
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -67,9 +67,15 @@ class User(Base, TimestampMixin):
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     mfa_enrolled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # A second address that can receive a one-time sign-in code. It counts only once it is verified.
+    recovery_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    recovery_email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When the password was last set: at registration, on a change, or on a reset.
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     sessions: Mapped[list["SessionToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    backup_codes: Mapped[list["BackupCode"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class SessionToken(Base):
@@ -116,6 +122,30 @@ class AuthChallenge(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     user: Mapped[User] = relationship()
+
+
+class BackupCode(Base):
+    __tablename__ = "backup_codes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    # Only a hash is kept, so the codes can be shown once, when they are generated.
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="backup_codes")
+
+
+class AuthThrottle(Base):
+    __tablename__ = "auth_throttles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    # SHA-256 of the scope plus the account email or IP address, so neither is stored in readable form.
+    subject: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    failure_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # ###############################################
@@ -170,6 +200,23 @@ class AccessToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship()
+    client: Mapped[OidcClient] = relationship()
+
+
+class AppConsent(Base):
+    """One row per account and app: the access the person agreed to give that app."""
+
+    __tablename__ = "app_consents"
+    __table_args__ = (UniqueConstraint("user_id", "client_id", name="uq_app_consents_user_client"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    client_id: Mapped[str] = mapped_column(ForeignKey("oidc_clients.id", ondelete="CASCADE"), nullable=False)
+    scopes: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship()
     client: Mapped[OidcClient] = relationship()

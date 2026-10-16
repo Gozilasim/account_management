@@ -1,6 +1,6 @@
 /*
 Created at: 2026-05-11 01:17
-Updated at: 2026-05-16 17:43
+Updated at: 2026-10-11 12:27
 Description: Frontend API client for GozilaSim ID backend and launcher endpoints.
 */
 
@@ -11,9 +11,14 @@ Description: Frontend API client for GozilaSim ID backend and launcher endpoints
 import type {
   AuthorizeContext,
   AvatarHistoryItem,
+  BackupCodes,
+  CodeSentResponse,
+  ConnectedApp,
+  DataSummary,
   ForgotPasswordResponse,
   LauncherApp,
   LoginResponse,
+  MfaMethod,
   MfaSetup,
   ProfilePromptField,
   ProfileUpdatePayload,
@@ -37,10 +42,13 @@ type RequestOptions = {
 
 export class ApiError extends Error {
   status: number;
+  // Seconds until a locked-out request may be tried again, taken from the Retry-After header.
+  retryAfterSeconds: number | null;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, retryAfterSeconds: number | null = null) {
     super(message);
     this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -83,7 +91,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     } catch {
       message = response.statusText || message;
     }
-    throw new ApiError(message, response.status);
+    const retryAfter = Number(response.headers.get("Retry-After"));
+    throw new ApiError(message, response.status, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null);
   }
 
   if (response.status === 204) {
@@ -110,11 +119,24 @@ export const api = {
     }),
   login: (payload: { email: string; password: string }) =>
     request<LoginResponse>("/api/auth/login", { method: "POST", body: payload }),
-  verifyMfaLogin: (payload: { challenge_id: string; code: string }) =>
+  verifyMfaLogin: (payload: { challenge_id: string; code: string; method?: MfaMethod }) =>
     request<LoginResponse>("/api/auth/mfa/login/verify", { method: "POST", body: payload }),
   verifyMfaSetup: (payload: { challenge_id: string; code: string }) =>
     request<LoginResponse>("/api/auth/mfa/setup/verify", { method: "POST", body: payload }),
   startMfaSetup: () => request<MfaSetup>("/api/auth/mfa/setup", { method: "POST" }),
+  sendRecoverySignInCode: (challengeId: string) =>
+    request<CodeSentResponse>("/api/auth/mfa/login/recovery-email", { method: "POST", body: { challenge_id: challengeId } }),
+  createBackupCodes: (currentPassword: string) =>
+    request<BackupCodes>("/api/auth/backup-codes", { method: "POST", body: { current_password: currentPassword } }),
+  startRecoveryEmail: (payload: { email: string; current_password: string }) =>
+    request<CodeSentResponse>("/api/auth/recovery-email", { method: "POST", body: payload }),
+  verifyRecoveryEmail: (code: string) =>
+    request<User>("/api/auth/recovery-email/verify", { method: "POST", body: { code } }),
+  removeRecoveryEmail: (currentPassword: string) =>
+    request<User>("/api/auth/recovery-email/remove", { method: "POST", body: { current_password: currentPassword } }),
+  startEmailVerification: () => request<CodeSentResponse>("/api/auth/email/verification", { method: "POST" }),
+  confirmEmailVerification: (code: string) =>
+    request<User>("/api/auth/email/verification/confirm", { method: "POST", body: { code } }),
   disableMfa: (payload: { current_password: string; code: string }) =>
     request<User>("/api/auth/mfa/disable", { method: "POST", body: payload }),
   changePassword: (payload: { current_password: string; new_password: string }) =>
@@ -131,12 +153,23 @@ export const api = {
     request<User>("/api/profile/onboarding/skip", { method: "POST", body: { field } }),
   completeProfileOnboarding: () =>
     request<User>("/api/profile/onboarding/complete", { method: "POST" }),
+  grantAppConsent: (payload: { client_id: string; redirect_uri: string; scope: string }) =>
+    request<{ message: string }>("/oauth/authorize/consent", { method: "POST", body: payload }),
   listLauncherApps: () => request<LauncherApp[]>("/api/apps/launcher"),
+  listConnectedApps: () => request<ConnectedApp[]>("/api/apps/connected"),
+  removeConnectedApp: (clientId: string) =>
+    request<{ message: string }>(`/api/apps/connected/${encodeURIComponent(clientId)}`, { method: "DELETE" }),
+  dataSummary: () => request<DataSummary>("/api/account/data-summary"),
+  exportAccountData: () => request<Record<string, unknown>>("/api/account/export"),
+  sendAccountDeletionCode: () => request<CodeSentResponse>("/api/account/delete/code", { method: "POST" }),
+  deleteAccount: (payload: { email: string; current_password: string; code?: string }) =>
+    request<{ message: string }>("/api/account/delete", { method: "POST", body: payload }),
   uploadAvatar: (file: File) => {
     const formData = new FormData();
     formData.set("avatar", file);
     return request<User>("/api/profile/avatar", { method: "POST", formData });
   },
+  removeAvatar: () => request<User>("/api/profile/avatar", { method: "DELETE" }),
   listAvatarHistory: () => request<AvatarHistoryItem[]>("/api/profile/avatar/history"),
   restoreAvatar: (publicId: string) =>
     request<User>("/api/profile/avatar/restore", { method: "POST", body: { public_id: publicId } }),
